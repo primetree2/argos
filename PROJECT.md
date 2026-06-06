@@ -531,38 +531,38 @@ Best tool per task:
 ---
 
 ## 17. Current Status
-> UPDATE THIS SECTION AFTER EVERY WORKING SESSION.
 
-Current phase: Phase 0 — Not started
+Current phase: Phase 4 — Elo + score breakdown + polish
 
 ### Phase checklist
-- [ ] Phase 0: Setup (GitHub repo, Vercel connected, Supabase project, Gemini API key, .env.local, PROJECT.md in repo)
-- [ ] Phase 1: Database + auth (schema applied in Supabase, RLS on, Google OAuth working, Drizzle configured)
-- [ ] Phase 2: Core game loop (create debate, debate room page, argument submission, mock AI scoring)
-- [ ] Phase 3: AI judge (Gemini integration, Edge Function async scoring, vs AI mode working)
-- [ ] Phase 4: Elo + share card + polish (Elo calc, OG image card, email notifications, private alpha done)
-- [ ] Phase 5: Security + public launch (content filter, rate limiting, Sentry, Posthog, launched)
-- [ ] Phase 6: Growth features (Daily Topic, challenge board, fallacy library)
+- [x] Phase 0: Setup (GitHub, Vercel, Supabase, Gemini API key, .env.local, PROJECT.md in repo)
+- [x] Phase 1: Database + auth (schema applied, RLS on, Google OAuth working, Drizzle configured)
+- [x] Phase 2: Core game loop (create debate, debate room UI, argument submission, two-player flow)
+- [x] Phase 3: AI judge (Gemini integration, real-time scoring, correct completion timing)
+- [ ] Phase 4: Elo + score breakdown + polish
+- [ ] Phase 5: Security + public launch
+- [ ] Phase 6: Growth features
 
 ### Last session
-First session — project not yet started. All planning complete. Ready for Phase 0.
+Built and tested the full debate flow end to end:
+- Google OAuth login working with auto user creation trigger
+- Debate creation, invite link, two-player join flow
+- Turn-based argument submission with countdown timer
+- Gemini AI scoring working in real time (66 vs 59 in test debate)
+- Realtime updates via Supabase — no manual refresh needed
+- Debate completes only after all arguments are scored
+- Fixed RLS policies for topics, debates, arguments tables
 
 ### Known issues / active blockers
-None.
+- Score breakdown UI (bars + fallacy list) not showing during the debate yet
+- Manual refresh still needed in some edge cases (opponent turn notification)
+- Elo ratings not updating after debate completion
 
 ### Next immediate task
-Phase 0 — Environment setup, in this exact order:
-1. npx create-next-app@latest argos --typescript --tailwind --app
-2. Create GitHub repo, push initial commit
-3. supabase.com -> new project -> save URL + anon key + service role key
-4. aistudio.google.com/apikey -> create free API key (no credit card)
-5. vercel.com -> import GitHub repo -> enable auto-deploy on main branch
-6. Create .env.local with all keys (see section 6 template)
-7. Confirm .env.local is in .gitignore
-8. Copy this PROJECT.md into repo root, commit it
-9. npm run dev -> confirm works locally
-10. Push to GitHub -> confirm Vercel deploys successfully
-
+Phase 4 — in this order:
+1. Verify ScoreBreakdown component shows during debate (check why bars not appearing mid-debate)
+2. Implement Elo update after debate completes in score/route.ts
+3. Build shareable result card via Next.js OG image API
 ---
 
 Document version: 2.0
