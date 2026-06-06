@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 export default async function DashboardPage() {
     const supabase = await createClient();
@@ -7,9 +8,21 @@ export default async function DashboardPage() {
 
     if (!user) redirect("/login");
 
+    // Fetch user stats
+    const { data: profile } = await supabase
+        .from("users")
+        .select("elo_rating, debates_won, debates_lost")
+        .eq("id", user.id)
+        .single();
+
+    const stats = {
+        elo: profile?.elo_rating ?? 1200,
+        won: profile?.debates_won ?? 0,
+        lost: profile?.debates_lost ?? 0,
+    };
+
     return (
         <div className="min-h-screen bg-black text-white">
-            {/* Navbar */}
             <nav className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
                 <h1 className="text-xl font-bold">Argos</h1>
                 <div className="flex items-center gap-4">
@@ -22,19 +35,18 @@ export default async function DashboardPage() {
                 </div>
             </nav>
 
-            {/* Main content */}
             <main className="max-w-4xl mx-auto px-6 py-12">
                 <div className="mb-10">
                     <h2 className="text-3xl font-bold">Welcome back</h2>
                     <p className="mt-1 text-white/40">Ready to debate?</p>
                 </div>
 
-                {/* Stats row */}
+                {/* Stats */}
                 <div className="grid grid-cols-3 gap-4 mb-10">
                     {[
-                        { label: "Elo Rating", value: "1200" },
-                        { label: "Debates Won", value: "0" },
-                        { label: "Debates Lost", value: "0" },
+                        { label: "Elo Rating", value: stats.elo },
+                        { label: "Debates Won", value: stats.won },
+                        { label: "Debates Lost", value: stats.lost },
                     ].map((stat) => (
                         <div
                             key={stat.label}
@@ -48,12 +60,15 @@ export default async function DashboardPage() {
 
                 {/* Actions */}
                 <div className="grid grid-cols-2 gap-4">
-                    <button className="rounded-xl border border-white/10 bg-white/5 p-6 text-left hover:bg-white/10 transition">
+                    <Link
+                        href="/debate/new"
+                        className="rounded-xl border border-white/10 bg-white/5 p-6 text-left hover:bg-white/10 transition block"
+                    >
                         <p className="text-lg font-semibold">New Debate</p>
                         <p className="mt-1 text-sm text-white/40">
                             Start a ranked or casual debate
                         </p>
-                    </button>
+                    </Link>
                     <button className="rounded-xl border border-white/10 bg-white/5 p-6 text-left hover:bg-white/10 transition">
                         <p className="text-lg font-semibold">Browse Challenges</p>
                         <p className="mt-1 text-sm text-white/40">
