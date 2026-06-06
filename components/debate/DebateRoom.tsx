@@ -191,11 +191,15 @@ export function DebateRoom({
 
         // Update debate turn
         const opponentId = isPlayerA ? debate.player_b_id : debate.player_a_id;
-        const nextRound =
-            debate.arguments.filter((a) => a.round_number === debate.current_round)
-                .length >= 1
-                ? debate.current_round + 1
-                : debate.current_round;
+        const argsThisRound = debate.arguments.filter(
+            (a) => a.round_number === debate.current_round
+        ).length;
+        const isLastArgOfRound = argsThisRound >= 1;
+        const nextRound = isLastArgOfRound
+            ? debate.current_round + 1
+            : debate.current_round;
+        const isLastRound = debate.current_round === debate.total_rounds;
+        const isFinalSubmission = isLastArgOfRound && isLastRound;
 
         await fetch(`/api/debates/${debate.id}`, {
             method: "PATCH",
@@ -203,8 +207,8 @@ export function DebateRoom({
             body: JSON.stringify({
                 current_turn: opponentId,
                 current_round: nextRound,
-                status:
-                    nextRound > debate.total_rounds ? "completed" : "active",
+                // Only complete after scoring — keep as "scoring" until AI is done
+                status: isFinalSubmission ? "scoring" : "active",
             }),
         });
 
@@ -239,8 +243,8 @@ export function DebateRoom({
                         <p className="text-xs text-white/40 mb-1">Your side</p>
                         <span
                             className={`text-sm font-bold px-3 py-1 rounded-full ${mySide === "FOR"
-                                    ? "bg-green-500/20 text-green-400"
-                                    : "bg-red-500/20 text-red-400"
+                                ? "bg-green-500/20 text-green-400"
+                                : "bg-red-500/20 text-red-400"
                                 }`}
                         >
                             {mySide}

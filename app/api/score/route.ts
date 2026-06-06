@@ -1,6 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { scoreArgument } from "@/lib/ai/judge";
 import { NextResponse } from "next/server";
+
+// Service role client — bypasses RLS for writing scores
+const serviceClient = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: Request) {
     const supabase = await createClient();
@@ -12,8 +19,8 @@ export async function POST(request: Request) {
 
     const { argumentId } = await request.json();
 
-    // Fetch the argument + debate context
-    const { data: arg, error: argError } = await supabase
+    // Fetch argument + debate context using service client
+    const { data: arg, error: argError } = await serviceClient
         .from("arguments")
         .select(`
       *,
@@ -37,24 +44,24 @@ export async function POST(request: Request) {
     }
 
     // Mark as scoring
-    await supabase
+    await serviceClient
         .from("arguments")
         .update({ scoring_status: "scoring" })
         .eq("id", argumentId);
 
-    // Get previous argument for rebuttal scoring
-    const { data: prevArgs } = await supabase
+    // Get previous argument from opponent for rebuttal context
+    const { data: prevArgs } = await serviceClient
         .from("arguments")
         .select("content")
         .eq("debate_id", arg.debate_id)
-        .neq("user_id", user.id)
+        .neq("user_id", arg.user_id)
         .order("submitted_at", { ascending: false })
         .limit(1);
 
     const prevArgument = prevArgs?.[0]?.content ?? null;
 
     // Determine side
-    const isPlayerA = arg.debates.player_a_id === user.id;
+    const isPlayerA = arg.debates.player_a_id === arg.user_id;
     const side = isPlayerA
         ? arg.debates.player_a_side
         : arg.debates.player_a_side === "FOR"
@@ -69,8 +76,8 @@ export async function POST(request: Request) {
             prevArgument
         );
 
-        // Save score to DB
-        const { data: updated } = await supabase
+        // Write score back
+        const { data: updated } = await serviceClient
             .from("arguments")
             .update({
                 score_total: score.total,
@@ -87,13 +94,41 @@ export async function POST(request: Request) {
             .select()
             .single();
 
+        // If this was the last argument, check if all arguments are scored
+        // and mark debate as completed
+        const { data: allArgs } = await serviceClient
+            .from("arguments")
+            .select("scoring_status")
+            .eq("debate_id", arg.debate_id);
+
+        const { data: debate } = await serviceClient
+            .from("debates")
+            .select("status, total_rounds")
+            .eq("id", arg.debate_id)
+            .single();
+
+        if (debate?.status === "scoring") {
+            const allScored = allArgs?.every((a) => a.scoring_status === "done");
+            if (allScored) {
+                await serviceClient
+                    .from("debates")
+                    .update({ status: "completed" })
+                    .eq("id", arg.debate_id);
+            }
+        }
+
         return NextResponse.json({ score, argument: updated });
     } catch (error) {
-        await supabase
+        console.error("Scoring error:", error);
+
+        await serviceClient
             .from("arguments")
             .update({ scoring_status: "failed" })
             .eq("id", argumentId);
 
-        return NextResponse.json({ error: "Scoring failed" }, { status: 500 });
+        return NextResponse.json(
+            { error: "Scoring failed", details: String(error) },
+            { status: 500 }
+        );
     }
 }
