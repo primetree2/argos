@@ -309,40 +309,66 @@ export function DebateRoom({
                     </div>
                 )}
 
-                {/* Active debate */}
-                {debate.status === "active" && (
+                {/* Active debate + scoring state — arguments always visible */}
+                {(debate.status === "active" || debate.status === "scoring") && (
                     <>
-                        {/* Opponent's last argument */}
-                        {lastOpponentArg && (
-                            <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-                                <p className="text-xs text-white/40 uppercase tracking-wider mb-3">
-                                    Opponent · Round {lastOpponentArg.round_number}
+                        {[...debate.arguments]
+                            .sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime())
+                            .map((arg) => {
+                                const isMine = arg.user_id === currentUserId;
+                                return (
+                                    <div
+                                        key={arg.id}
+                                        className={`rounded-xl border p-6 ${isMine
+                                            ? "border-green-500/20 bg-green-500/5"
+                                            : "border-white/10 bg-white/5"
+                                            }`}
+                                    >
+                                        <div className="flex items-center justify-between mb-3">
+                                            <p className="text-xs text-white/40 uppercase tracking-wider">
+                                                {isMine ? "You" : "Opponent"} · Round {arg.round_number}
+                                            </p>
+                                            {arg.scoring_status === "done" && (
+                                                <span className="text-xs font-mono font-bold text-white/60">
+                                                    {arg.score_total}/80
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className={`leading-relaxed ${isMine ? "text-green-100/80" : "text-white/80"}`}>
+                                            {arg.content}
+                                        </p>
+                                        {arg.scoring_status === "scoring" && (
+                                            <p className="mt-3 text-xs text-yellow-400/70 animate-pulse">
+                                                AI is scoring this argument...
+                                            </p>
+                                        )}
+                                        {arg.scoring_status === "pending" && (
+                                            <p className="mt-3 text-xs text-white/30 animate-pulse">
+                                                Waiting to score...
+                                            </p>
+                                        )}
+                                        {arg.scoring_status === "done" && (
+                                            <ScoreBreakdown argument={arg} />
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                        {/* Waiting for opponent */}
+                        {!isMyTurn && debate.status === "active" && (
+                            <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center">
+                                <p className="text-white/40 animate-pulse">
+                                    Waiting for opponent's argument...
                                 </p>
-                                <p className="text-white/80 leading-relaxed">
-                                    {lastOpponentArg.content}
-                                </p>
-                                {lastOpponentArg.scoring_status === "done" && (
-                                    <ScoreBreakdown argument={lastOpponentArg} />
-                                )}
-                                {lastOpponentArg.scoring_status === "scoring" && (
-                                    <p className="mt-3 text-xs text-yellow-400/70 animate-pulse">
-                                        AI is scoring this argument...
-                                    </p>
-                                )}
                             </div>
                         )}
 
-                        {/* My last argument score */}
-                        {myLastArg && myLastArg.scoring_status === "done" && (
-                            <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-                                <p className="text-xs text-white/40 uppercase tracking-wider mb-3">
-                                    Your argument · Round {myLastArg.round_number} · Score:{" "}
-                                    <span className="text-green-400">{myLastArg.score_total}</span>/80
+                        {/* Scoring in progress — final round */}
+                        {debate.status === "scoring" && (
+                            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-6 text-center">
+                                <p className="text-yellow-400/70 animate-pulse text-sm">
+                                    AI is scoring the final arguments...
                                 </p>
-                                <p className="text-white/60 leading-relaxed text-sm">
-                                    {myLastArg.content}
-                                </p>
-                                <ScoreBreakdown argument={myLastArg} />
                             </div>
                         )}
 
@@ -353,10 +379,7 @@ export function DebateRoom({
                                     <p className="text-sm font-medium">Your argument</p>
                                     <div className="flex items-center gap-3 text-xs">
                                         <span className="text-white/40">{wordCount} words</span>
-                                        <span
-                                            className={`font-mono ${timeLeft < 60 ? "text-red-400" : "text-white/40"
-                                                }`}
-                                        >
+                                        <span className={`font-mono ${timeLeft < 60 ? "text-red-400" : "text-white/40"}`}>
                                             {formatTime(timeLeft)}
                                         </span>
                                     </div>
@@ -368,9 +391,7 @@ export function DebateRoom({
                                     className="w-full rounded-lg border border-white/10 bg-black px-4 py-3 text-white placeholder-white/20 resize-none focus:outline-none focus:border-white/30 transition"
                                     rows={6}
                                 />
-                                {error && (
-                                    <p className="mt-2 text-xs text-red-400">{error}</p>
-                                )}
+                                {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
                                 <div className="mt-3 flex justify-end">
                                     <button
                                         onClick={handleSubmit}
@@ -382,49 +403,73 @@ export function DebateRoom({
                                 </div>
                             </div>
                         )}
-
-                        {/* Waiting for opponent turn */}
-                        {!isMyTurn && (
-                            <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center">
-                                <p className="text-white/40 animate-pulse">
-                                    Waiting for opponent's argument...
-                                </p>
-                            </div>
-                        )}
                     </>
                 )}
 
-                {/* Completed */}
+                {/* Completed — show all arguments + results */}
                 {debate.status === "completed" && (
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center">
-                        <p className="text-2xl font-bold mb-2">Debate Complete!</p>
-                        <p className="text-white/40 mb-6">Final Scores</p>
-                        <div className="flex justify-center gap-12">
-                            <div>
-                                <p className="text-4xl font-bold text-green-400">{myScore}</p>
-                                <p className="text-xs text-white/40 mt-1">You</p>
+                    <>
+                        {[...debate.arguments]
+                            .sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime())
+                            .map((arg) => {
+                                const isMine = arg.user_id === currentUserId;
+                                return (
+                                    <div
+                                        key={arg.id}
+                                        className={`rounded-xl border p-6 ${isMine
+                                            ? "border-green-500/20 bg-green-500/5"
+                                            : "border-white/10 bg-white/5"
+                                            }`}
+                                    >
+                                        <div className="flex items-center justify-between mb-3">
+                                            <p className="text-xs text-white/40 uppercase tracking-wider">
+                                                {isMine ? "You" : "Opponent"} · Round {arg.round_number}
+                                            </p>
+                                            {arg.scoring_status === "done" && (
+                                                <span className="text-xs font-mono font-bold text-white/60">
+                                                    {arg.score_total}/80
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className={`leading-relaxed text-sm ${isMine ? "text-green-100/70" : "text-white/70"}`}>
+                                            {arg.content}
+                                        </p>
+                                        {arg.scoring_status === "done" && (
+                                            <ScoreBreakdown argument={arg} />
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                        {/* Final result card */}
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center">
+                            <p className="text-2xl font-bold mb-2">Debate Complete!</p>
+                            <p className="text-white/40 mb-6">Final Scores</p>
+                            <div className="flex justify-center gap-12">
+                                <div>
+                                    <p className="text-4xl font-bold text-green-400">{myScore}</p>
+                                    <p className="text-xs text-white/40 mt-1">You</p>
+                                </div>
+                                <div>
+                                    <p className="text-4xl font-bold text-red-400">{opponentScore}</p>
+                                    <p className="text-xs text-white/40 mt-1">Opponent</p>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-4xl font-bold text-red-400">
-                                    {opponentScore}
-                                </p>
-                                <p className="text-xs text-white/40 mt-1">Opponent</p>
-                            </div>
+                            <p className="mt-6 text-lg font-semibold">
+                                {myScore > opponentScore
+                                    ? "🏆 You won!"
+                                    : myScore < opponentScore
+                                        ? "You lost. Better luck next time."
+                                        : "It's a tie!"}
+                            </p>
+                            <button
+                                onClick={() => (window.location.href = "/dashboard")}
+                                className="mt-6 bg-white text-black font-semibold px-6 py-2 rounded-lg hover:bg-white/90 transition"
+                            >
+                                Back to Dashboard
+                            </button>
                         </div>
-                        <p className="mt-6 text-lg font-semibold">
-                            {myScore > opponentScore
-                                ? "🏆 You won!"
-                                : myScore < opponentScore
-                                    ? "You lost. Better luck next time."
-                                    : "It's a tie!"}
-                        </p>
-                        <button
-                            onClick={() => (window.location.href = "/dashboard")}
-                            className="mt-6 bg-white text-black font-semibold px-6 py-2 rounded-lg hover:bg-white/90 transition"
-                        >
-                            Back to Dashboard
-                        </button>
-                    </div>
+                    </>
                 )}
             </div>
         </div>
