@@ -592,6 +592,21 @@ All core game loop working: scoring, fallacy detection, Elo updates, completion 
 Build shareable result card at /app/api/og/route.tsx using Next.js OG Image API.
 Shows: topic, both players, final scores, winner, Elo change, top fallacy caught.
 
+### Last session
+Phase 4 complete:
+- Shareable OG result card working on Vercel (topic, scores, winner, usernames)
+- Landing page live at argos-indol.vercel.app
+- Share button on completed debate screen
+- Fixed invalid hex CSS bug in OG route
+
+### Next immediate task
+Phase 5 — Security + public launch prep:
+1. Add content moderation filter before arguments reach Gemini
+2. Add rate limiting on /api/score (prevent abuse)
+3. Install Sentry for error monitoring
+4. Install Posthog for analytics
+5. Test full flow on Vercel with a real friend
+
 
 
 Document version: 2.0
