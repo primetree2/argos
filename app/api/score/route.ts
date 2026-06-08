@@ -19,6 +19,25 @@ export async function POST(request: Request) {
 
     const { argumentId } = await request.json();
 
+    // Fetch and moderate content before scoring
+    const { data: argCheck } = await serviceClient
+        .from("arguments")
+        .select("content")
+        .eq("id", argumentId)
+        .single();
+
+    if (argCheck) {
+        const { moderateContent } = await import("@/lib/moderation");
+        const modResult = moderateContent(argCheck.content);
+        if (!modResult.allowed) {
+            await serviceClient
+                .from("arguments")
+                .update({ scoring_status: "failed", ai_feedback: modResult.reason })
+                .eq("id", argumentId);
+            return NextResponse.json({ error: modResult.reason }, { status: 400 });
+        }
+    }
+
     // Fetch argument + debate context using service client
     const { data: arg, error: argError } = await serviceClient
         .from("arguments")
