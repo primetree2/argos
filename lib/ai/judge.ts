@@ -21,7 +21,7 @@ export async function scoreArgument(
     prevArgument: string | null,
     retries: number = 3
 ): Promise<ScoreResult> {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
     const prompt = buildJudgePrompt(topic, side, currentArgument, prevArgument);
 
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -31,7 +31,8 @@ export async function scoreArgument(
             const clean = text.replace(/```json|```/g, "").trim();
             return JSON.parse(clean) as ScoreResult;
         } catch (error: any) {
-            const is503 = error?.status === 503 || String(error).includes("503");
+            const is503 = error?.status === 503 || error?.status === 429 ||
+                String(error).includes("503") || String(error).includes("429");
             const isLastAttempt = attempt === retries;
 
             if (is503 && !isLastAttempt) {
