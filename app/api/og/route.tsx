@@ -72,11 +72,11 @@ export async function GET(request: Request) {
         .eq("id", debate.player_a_id)
         .single();
 
-    const { data: playerB } = await serviceClient
+    const { data: playerB } = debate.player_b_id ? await serviceClient
         .from("users")
         .select("username, elo_rating")
         .eq("id", debate.player_b_id)
-        .single();
+        .single() : { data: null };
 
     // Calculate scores
     const scoreA = debate.arguments
