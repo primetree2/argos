@@ -1,7 +1,6 @@
 import { ImageResponse } from "next/og";
 import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "edge";
 
 const serviceClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -135,7 +134,7 @@ export async function GET(request: Request) {
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        background: scoreA > scoreB ? "#0f2" + "11" : "#ffffff11",
+                        background: scoreA > scoreB ? "#052e16" : "#1a1a1a",
                         border: `2px solid ${scoreA > scoreB ? "#22c55e" : "#333"}`,
                         borderRadius: "16px",
                         padding: "24px 40px",
@@ -163,7 +162,7 @@ export async function GET(request: Request) {
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        background: scoreB > scoreA ? "#0f2" + "11" : "#ffffff11",
+                        background: scoreB > scoreA ? "#052e16" : "#1a1a1a",
                         border: `2px solid ${scoreB > scoreA ? "#22c55e" : "#333"}`,
                         borderRadius: "16px",
                         padding: "24px 40px",
