@@ -189,8 +189,23 @@ export function DebateRoom({
             return;
         }
 
-        // Update debate turn
-        const opponentId = isPlayerA ? debate.player_b_id : debate.player_a_id;
+        // Fetch fresh debate state before updating turn
+        const { data: freshDebate } = await supabase
+            .from("debates")
+            .select("player_a_id, player_b_id, current_round, total_rounds")
+            .eq("id", debate.id)
+            .single();
+
+        if (!freshDebate) {
+            setError("Failed to update debate state");
+            setSubmitting(false);
+            return;
+        }
+
+        const opponentId = freshDebate.player_a_id === currentUserId
+            ? freshDebate.player_b_id
+            : freshDebate.player_a_id;
+
         const argsThisRound = debate.arguments.filter(
             (a) => a.round_number === debate.current_round
         ).length;
@@ -207,7 +222,6 @@ export function DebateRoom({
             body: JSON.stringify({
                 current_turn: opponentId,
                 current_round: nextRound,
-                // Only complete after scoring — keep as "scoring" until AI is done
                 status: isFinalSubmission ? "scoring" : "active",
             }),
         });

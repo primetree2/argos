@@ -564,6 +564,26 @@ Phase 4 — in this order:
 2. Implement Elo update after debate completes in score/route.ts
 3. Build shareable result card via Next.js OG image API
 ---
+### Last session
+- Score breakdown bars + fallacy detection showing during debate in real time
+- Arguments persist after debate completes (not replaced by results)
+- "AI is scoring final arguments..." banner during last round
+- Elo updates implemented for ranked debates
+- Win/loss counts updating for casual debates  
+- Switched Gemini model to gemini-3.1-flash-lite (500 RPD free vs 20 RPD on 2.5 Flash)
+- Added 429 rate limit to retry logic alongside 503
+
+### Known issues / active blockers
+- Opponent Round 1 argument not getting scored in some cases (need to verify with new model)
+- Need to test full ranked debate Elo change end to end
+
+### Next immediate task
+Test a full ranked debate with both accounts and verify:
+1. All arguments get scored including opponent round 1
+2. Elo ratings change on dashboard after ranked debate completes
+3. Win/loss counts update
+Then move to: shareable result card (OG image)
+
 
 Document version: 2.0
 AI provider: Google Gemini free tier
