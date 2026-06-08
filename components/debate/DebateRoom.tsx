@@ -477,6 +477,16 @@ export function DebateRoom({
                                         : "It's a tie!"}
                             </p>
                             <button
+                                onClick={() => {
+                                    const url = window.location.href;
+                                    navigator.clipboard.writeText(url);
+                                    alert("Debate link copied! Share it anywhere.");
+                                }}
+                                className="mt-4 border border-white/20 text-white/60 px-6 py-2 rounded-lg hover:bg-white/10 transition text-sm"
+                            >
+                                📤 Share this debate
+                            </button>
+                            <button
                                 onClick={() => (window.location.href = "/dashboard")}
                                 className="mt-6 bg-white text-black font-semibold px-6 py-2 rounded-lg hover:bg-white/90 transition"
                             >

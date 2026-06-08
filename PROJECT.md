@@ -584,6 +584,15 @@ Test a full ranked debate with both accounts and verify:
 3. Win/loss counts update
 Then move to: shareable result card (OG image)
 
+### Last session
+Fixed stuck turn bug — fetch fresh debate state before updating turn.
+All core game loop working: scoring, fallacy detection, Elo updates, completion flow.
+
+### Next immediate task
+Build shareable result card at /app/api/og/route.tsx using Next.js OG Image API.
+Shows: topic, both players, final scores, winner, Elo change, top fallacy caught.
+
+
 
 Document version: 2.0
 AI provider: Google Gemini free tier

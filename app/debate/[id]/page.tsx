@@ -2,6 +2,25 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DebateRoom } from "@/components/debate/DebateRoom";
 
+export async function generateMetadata({
+    params,
+}: {
+    params: Promise<{ id: string }>;
+}) {
+    const { id } = await params;
+    const ogUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/og?debate_id=${id}`;
+    return {
+        title: "Argos — AI Debate Arena",
+        openGraph: {
+            images: [{ url: ogUrl, width: 1200, height: 630 }],
+        },
+        twitter: {
+            card: "summary_large_image",
+            images: [ogUrl],
+        },
+    };
+}
+
 export default async function DebatePage({
     params,
 }: {
