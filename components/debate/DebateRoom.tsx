@@ -279,7 +279,13 @@ export function DebateRoom({
                                         {typeof window !== "undefined" ? window.location.href : ""}
                                     </code>
                                     <button
-                                        onClick={() => navigator.clipboard.writeText(window.location.href)}
+                                        onClick={async () => {
+                                            try {
+                                                await navigator.clipboard.writeText(window.location.href);
+                                            } catch {
+                                                // Clipboard not available — silently ignore
+                                            }
+                                        }}
                                         className="text-xs px-3 py-2 rounded-[4px] bg-[#f59e0b]/10 border border-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/20 transition-all"
                                     >
                                         Copy
@@ -447,8 +453,12 @@ export function DebateRoom({
                             </p>
                             <div className="flex gap-3 justify-center">
                                 <button
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(window.location.href);
+                                    onClick={async () => {
+                                        try {
+                                            await navigator.clipboard.writeText(window.location.href);
+                                        } catch {
+                                            // Clipboard not available — silently ignore
+                                        }
                                         alert("Link copied!");
                                     }}
                                     className="border border-white/10 text-white/40 px-5 py-2.5 rounded-[4px] hover:bg-white/5 transition-all text-xs font-mono tracking-wider"
@@ -456,7 +466,7 @@ export function DebateRoom({
                                     SHARE
                                 </button>
                                 <button
-                                    onClick={() => (window.location.href = "/dashboard")}
+
                                     className="bg-[#f59e0b] text-black font-bold px-5 py-2.5 rounded-[4px] hover:bg-[#fbbf24] transition-all text-xs tracking-wider"
                                 >
                                     BACK TO HOME →
