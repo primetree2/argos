@@ -67,12 +67,6 @@ export function DebateRoom({
         0
     );
     const mySide = isPlayerA ? debate.player_a_side : debate.player_a_side === "FOR" ? "AGAINST" : "FOR";
-    const lastOpponentArg = opponentArguments.sort(
-        (a, b) => b.round_number - a.round_number
-    )[0];
-    const myLastArg = myArguments.sort(
-        (a, b) => b.round_number - a.round_number
-    )[0];
 
     // Realtime subscription
     useEffect(() => {
@@ -243,62 +237,50 @@ export function DebateRoom({
         : 0;
 
     return (
-        <div className="min-h-screen bg-black text-white flex flex-col">
+        <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
             {/* Header */}
-            <div className="border-b border-white/10 px-6 py-4">
-                <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <div className="border-b border-white/5 px-8 py-4">
+                <div className="max-w-3xl mx-auto flex items-center justify-between">
                     <div>
-                        <p className="text-xs text-white/40 uppercase tracking-wider mb-1">
-                            {debate.mode} · Round {debate.current_round}/{debate.total_rounds}
+                        <p className="text-[10px] font-mono text-white/20 tracking-widest mb-1">
+                            {debate.mode.toUpperCase()} · ROUND {debate.current_round}/{debate.total_rounds}
                         </p>
-                        <h1 className="text-lg font-semibold">{debate.topics.title}</h1>
+                        <h1 className="text-base font-semibold tracking-tight">{debate.topics.title}</h1>
                     </div>
-                    <div className="text-right">
-                        <p className="text-xs text-white/40 mb-1">Your side</p>
-                        <span
-                            className={`text-sm font-bold px-3 py-1 rounded-full ${mySide === "FOR"
-                                ? "bg-green-500/20 text-green-400"
-                                : "bg-red-500/20 text-red-400"
-                                }`}
-                        >
-                            {mySide}
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Score bar */}
-            <div className="border-b border-white/10 px-6 py-3">
-                <div className="max-w-4xl mx-auto flex items-center justify-between text-sm">
-                    <span className="font-mono text-green-400">{myScore} pts (You)</span>
-                    <span className="text-white/30 text-xs">SCORE</span>
-                    <span className="font-mono text-red-400">
-                        {opponentScore} pts (Opponent)
+                    <span className={`text-xs font-mono font-bold px-3 py-1.5 rounded-[4px] border tracking-wider ${mySide === "FOR"
+                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                        : "bg-red-500/10 border-red-500/20 text-red-400"
+                        }`}>
+                        {mySide}
                     </span>
                 </div>
             </div>
 
-            <div className="flex-1 max-w-4xl mx-auto w-full px-6 py-8 space-y-6">
+            {/* Score bar */}
+            <div className="border-b border-white/5 px-8 py-3">
+                <div className="max-w-3xl mx-auto flex items-center justify-between">
+                    <span className="font-mono text-sm font-bold text-[#f59e0b]">{myScore} <span className="text-[#f59e0b]/40 text-xs">YOU</span></span>
+                    <span className="text-[10px] font-mono text-white/15 tracking-widest">SCORE</span>
+                    <span className="font-mono text-sm font-bold text-white/40">{opponentScore} <span className="text-white/20 text-xs">OPP</span></span>
+                </div>
+            </div>
+
+            <div className="flex-1 max-w-3xl mx-auto w-full px-8 py-8 space-y-4">
+
                 {/* Waiting state */}
                 {debate.status === "waiting" && (
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center">
+                    <div className="rounded-[6px] border border-white/5 bg-[#111] p-8 text-center">
                         {debate.player_a_id === currentUserId ? (
                             <>
-                                <p className="text-white/60 mb-2">Waiting for opponent...</p>
-                                <p className="text-xs text-white/30 mb-4">
-                                    Share this link to invite someone:
-                                </p>
-                                <div className="flex gap-2 justify-center">
-                                    <code className="text-xs bg-white/10 px-3 py-2 rounded-lg text-white/70">
-                                        {typeof window !== "undefined"
-                                            ? window.location.href
-                                            : ""}
+                                <p className="text-[10px] font-mono text-white/20 tracking-widest mb-4">WAITING FOR OPPONENT</p>
+                                <p className="text-white/40 text-sm mb-6">Share this link to start the debate</p>
+                                <div className="flex gap-2 justify-center max-w-sm mx-auto">
+                                    <code className="flex-1 text-xs bg-white/5 border border-white/5 px-3 py-2 rounded-[4px] text-white/40 truncate font-mono">
+                                        {typeof window !== "undefined" ? window.location.href : ""}
                                     </code>
                                     <button
-                                        onClick={() =>
-                                            navigator.clipboard.writeText(window.location.href)
-                                        }
-                                        className="text-xs px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition"
+                                        onClick={() => navigator.clipboard.writeText(window.location.href)}
+                                        className="text-xs px-3 py-2 rounded-[4px] bg-[#f59e0b]/10 border border-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/20 transition-all"
                                     >
                                         Copy
                                     </button>
@@ -306,24 +288,21 @@ export function DebateRoom({
                             </>
                         ) : (
                             <>
-                                <p className="text-white/60 mb-4">
-                                    You've been challenged to a debate!
-                                </p>
-                                <p className="text-sm text-white/40 mb-6">
-                                    Topic: <strong className="text-white">{debate.topics.title}</strong>
-                                </p>
+                                <p className="text-[10px] font-mono text-white/20 tracking-widest mb-4">CHALLENGE RECEIVED</p>
+                                <p className="text-white/60 text-sm mb-2">You've been challenged</p>
+                                <p className="text-white font-semibold mb-8">{debate.topics.title}</p>
                                 <button
                                     onClick={handleJoin}
-                                    className="bg-white text-black font-semibold px-8 py-3 rounded-xl hover:bg-white/90 transition"
+                                    className="bg-[#f59e0b] text-black font-bold px-8 py-3 rounded-[6px] hover:bg-[#fbbf24] transition-all text-sm tracking-wide shadow-[0_0_20px_rgba(245,158,11,0.2)]"
                                 >
-                                    Accept & Join Debate
+                                    ACCEPT & JOIN →
                                 </button>
                             </>
                         )}
                     </div>
                 )}
 
-                {/* Active debate + scoring state — arguments always visible */}
+                {/* Active + scoring */}
                 {(debate.status === "active" || debate.status === "scoring") && (
                     <>
                         {[...debate.arguments]
@@ -333,67 +312,60 @@ export function DebateRoom({
                                 return (
                                     <div
                                         key={arg.id}
-                                        className={`rounded-xl border p-6 ${isMine
-                                            ? "border-green-500/20 bg-green-500/5"
-                                            : "border-white/10 bg-white/5"
+                                        className={`rounded-[6px] border p-5 transition-all duration-300 ${isMine
+                                            ? "border-[#f59e0b]/15 bg-[#f59e0b]/3"
+                                            : "border-white/5 bg-[#111]"
                                             }`}
                                     >
                                         <div className="flex items-center justify-between mb-3">
-                                            <p className="text-xs text-white/40 uppercase tracking-wider">
-                                                {isMine ? "You" : "Opponent"} · Round {arg.round_number}
+                                            <p className="text-[10px] font-mono tracking-widest text-white/20">
+                                                {isMine ? "YOU" : "OPPONENT"} · ROUND {arg.round_number}
                                             </p>
                                             {arg.scoring_status === "done" && (
-                                                <span className="text-xs font-mono font-bold text-white/60">
+                                                <span className={`text-xs font-mono font-bold ${isMine ? "text-[#f59e0b]" : "text-white/40"}`}>
                                                     {arg.score_total}/80
                                                 </span>
                                             )}
                                         </div>
-                                        <p className={`leading-relaxed ${isMine ? "text-green-100/80" : "text-white/80"}`}>
-                                            {arg.content}
-                                        </p>
+                                        <p className="text-white/70 text-sm leading-relaxed">{arg.content}</p>
                                         {arg.scoring_status === "scoring" && (
-                                            <p className="mt-3 text-xs text-yellow-400/70 animate-pulse">
-                                                AI is scoring this argument...
+                                            <p className="mt-3 text-[11px] font-mono text-[#f59e0b]/50 animate-pulse tracking-wider">
+                                                AI SCORING...
                                             </p>
                                         )}
                                         {arg.scoring_status === "pending" && (
-                                            <p className="mt-3 text-xs text-white/30 animate-pulse">
-                                                Waiting to score...
+                                            <p className="mt-3 text-[11px] font-mono text-white/20 animate-pulse tracking-wider">
+                                                QUEUED...
                                             </p>
                                         )}
-                                        {arg.scoring_status === "done" && (
-                                            <ScoreBreakdown argument={arg} />
-                                        )}
+                                        {arg.scoring_status === "done" && <ScoreBreakdown argument={arg} />}
                                     </div>
                                 );
                             })}
 
-                        {/* Waiting for opponent */}
                         {!isMyTurn && debate.status === "active" && (
-                            <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center">
-                                <p className="text-white/40 animate-pulse">
-                                    Waiting for opponent's argument...
+                            <div className="rounded-[6px] border border-white/5 bg-[#111] p-5 text-center">
+                                <p className="text-[11px] font-mono text-white/20 animate-pulse tracking-widest">
+                                    WAITING FOR OPPONENT...
                                 </p>
                             </div>
                         )}
 
-                        {/* Scoring in progress — final round */}
                         {debate.status === "scoring" && (
-                            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-6 text-center">
-                                <p className="text-yellow-400/70 animate-pulse text-sm">
-                                    AI is scoring the final arguments...
+                            <div className="rounded-[6px] border border-[#f59e0b]/10 bg-[#f59e0b]/3 p-5 text-center">
+                                <p className="text-[11px] font-mono text-[#f59e0b]/50 animate-pulse tracking-widest">
+                                    AI SCORING FINAL ARGUMENTS...
                                 </p>
                             </div>
                         )}
 
-                        {/* My turn input */}
                         {isMyTurn && debate.status === "active" && (
-                            <div className="rounded-xl border border-white/20 bg-white/5 p-6">
+                            <div className="rounded-[6px] border border-[#f59e0b]/25 bg-[#f59e0b]/3 p-5 shadow-[0_0_20px_rgba(245,158,11,0.06)]">
                                 <div className="flex items-center justify-between mb-3">
-                                    <p className="text-sm font-medium">Your argument</p>
-                                    <div className="flex items-center gap-3 text-xs">
-                                        <span className="text-white/40">{wordCount} words</span>
-                                        <span className={`font-mono ${timeLeft < 60 ? "text-red-400" : "text-white/40"}`}>
+                                    <p className="text-[10px] font-mono text-[#f59e0b]/60 tracking-widest">YOUR ARGUMENT</p>
+                                    <div className="flex items-center gap-4 text-[11px] font-mono">
+                                        <span className="text-white/20">{wordCount} words</span>
+                                        <span className={timeLeft < 60 ? "text-red-400" : "text-white/20"}>
                                             {formatTime(timeLeft)}
                                         </span>
                                     </div>
@@ -401,18 +373,18 @@ export function DebateRoom({
                                 <textarea
                                     value={argument}
                                     onChange={(e) => setArgument(e.target.value)}
-                                    placeholder="Make your argument here. Be clear, cite evidence, and address your opponent's points..."
-                                    className="w-full rounded-lg border border-white/10 bg-black px-4 py-3 text-white placeholder-white/20 resize-none focus:outline-none focus:border-white/30 transition"
-                                    rows={6}
+                                    placeholder="Make your argument. Be specific, cite evidence, address your opponent..."
+                                    className="w-full rounded-[4px] border border-white/5 bg-black/40 px-4 py-3 text-white placeholder-white/15 resize-none focus:outline-none focus:border-[#f59e0b]/20 transition-all text-sm leading-relaxed"
+                                    rows={5}
                                 />
-                                {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+                                {error && <p className="mt-2 text-xs text-red-400 font-mono">{error}</p>}
                                 <div className="mt-3 flex justify-end">
                                     <button
                                         onClick={handleSubmit}
                                         disabled={submitting}
-                                        className="bg-white text-black font-semibold px-6 py-2 rounded-lg hover:bg-white/90 transition disabled:opacity-50"
+                                        className="bg-[#f59e0b] text-black font-bold px-6 py-2.5 rounded-[4px] hover:bg-[#fbbf24] transition-all disabled:opacity-40 text-xs tracking-wider shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                                     >
-                                        {submitting ? "Submitting..." : "Submit Argument →"}
+                                        {submitting ? "SUBMITTING..." : "SUBMIT →"}
                                     </button>
                                 </div>
                             </div>
@@ -420,7 +392,7 @@ export function DebateRoom({
                     </>
                 )}
 
-                {/* Completed — show all arguments + results */}
+                {/* Completed */}
                 {debate.status === "completed" && (
                     <>
                         {[...debate.arguments]
@@ -430,68 +402,66 @@ export function DebateRoom({
                                 return (
                                     <div
                                         key={arg.id}
-                                        className={`rounded-xl border p-6 ${isMine
-                                            ? "border-green-500/20 bg-green-500/5"
-                                            : "border-white/10 bg-white/5"
+                                        className={`rounded-[6px] border p-5 ${isMine ? "border-[#f59e0b]/15 bg-[#f59e0b]/3" : "border-white/5 bg-[#111]"
                                             }`}
                                     >
                                         <div className="flex items-center justify-between mb-3">
-                                            <p className="text-xs text-white/40 uppercase tracking-wider">
-                                                {isMine ? "You" : "Opponent"} · Round {arg.round_number}
+                                            <p className="text-[10px] font-mono tracking-widest text-white/20">
+                                                {isMine ? "YOU" : "OPPONENT"} · ROUND {arg.round_number}
                                             </p>
                                             {arg.scoring_status === "done" && (
-                                                <span className="text-xs font-mono font-bold text-white/60">
+                                                <span className={`text-xs font-mono font-bold ${isMine ? "text-[#f59e0b]" : "text-white/40"}`}>
                                                     {arg.score_total}/80
                                                 </span>
                                             )}
                                         </div>
-                                        <p className={`leading-relaxed text-sm ${isMine ? "text-green-100/70" : "text-white/70"}`}>
-                                            {arg.content}
-                                        </p>
-                                        {arg.scoring_status === "done" && (
-                                            <ScoreBreakdown argument={arg} />
-                                        )}
+                                        <p className="text-white/60 text-sm leading-relaxed">{arg.content}</p>
+                                        {arg.scoring_status === "done" && <ScoreBreakdown argument={arg} />}
                                     </div>
                                 );
                             })}
 
-                        {/* Final result card */}
-                        <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center">
-                            <p className="text-2xl font-bold mb-2">Debate Complete!</p>
-                            <p className="text-white/40 mb-6">Final Scores</p>
-                            <div className="flex justify-center gap-12">
+                        {/* Result card */}
+                        <div className={`rounded-[6px] border p-8 text-center ${myScore > opponentScore
+                            ? "border-[#f59e0b]/30 bg-[#f59e0b]/5 shadow-[0_0_40px_rgba(245,158,11,0.1)]"
+                            : "border-white/5 bg-[#111]"
+                            }`}>
+                            <p className="text-[10px] font-mono tracking-widest text-white/20 mb-6">FINAL RESULT</p>
+                            <div className="flex justify-center gap-16 mb-8">
                                 <div>
-                                    <p className="text-4xl font-bold text-green-400">{myScore}</p>
-                                    <p className="text-xs text-white/40 mt-1">You</p>
+                                    <p className="text-5xl font-bold font-mono text-[#f59e0b]">{myScore}</p>
+                                    <p className="text-[10px] font-mono text-white/20 mt-2 tracking-widest">YOU</p>
                                 </div>
+                                <div className="text-white/10 font-mono text-2xl self-center">VS</div>
                                 <div>
-                                    <p className="text-4xl font-bold text-red-400">{opponentScore}</p>
-                                    <p className="text-xs text-white/40 mt-1">Opponent</p>
+                                    <p className="text-5xl font-bold font-mono text-white/30">{opponentScore}</p>
+                                    <p className="text-[10px] font-mono text-white/20 mt-2 tracking-widest">OPPONENT</p>
                                 </div>
                             </div>
-                            <p className="mt-6 text-lg font-semibold">
+                            <p className="text-lg font-bold mb-6">
                                 {myScore > opponentScore
-                                    ? "🏆 You won!"
+                                    ? "🏆 You won this debate."
                                     : myScore < opponentScore
-                                        ? "You lost. Better luck next time."
-                                        : "It's a tie!"}
+                                        ? "You lost. Study the feedback and come back stronger."
+                                        : "Dead even. Rematch?"}
                             </p>
-                            <button
-                                onClick={() => {
-                                    const url = window.location.href;
-                                    navigator.clipboard.writeText(url);
-                                    alert("Debate link copied! Share it anywhere.");
-                                }}
-                                className="mt-4 border border-white/20 text-white/60 px-6 py-2 rounded-lg hover:bg-white/10 transition text-sm"
-                            >
-                                📤 Share this debate
-                            </button>
-                            <button
-                                onClick={() => (window.location.href = "/dashboard")}
-                                className="mt-6 bg-white text-black font-semibold px-6 py-2 rounded-lg hover:bg-white/90 transition"
-                            >
-                                Back to Dashboard
-                            </button>
+                            <div className="flex gap-3 justify-center">
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(window.location.href);
+                                        alert("Link copied!");
+                                    }}
+                                    className="border border-white/10 text-white/40 px-5 py-2.5 rounded-[4px] hover:bg-white/5 transition-all text-xs font-mono tracking-wider"
+                                >
+                                    SHARE
+                                </button>
+                                <button
+                                    onClick={() => (window.location.href = "/dashboard")}
+                                    className="bg-[#f59e0b] text-black font-bold px-5 py-2.5 rounded-[4px] hover:bg-[#fbbf24] transition-all text-xs tracking-wider"
+                                >
+                                    BACK TO HOME →
+                                </button>
+                            </div>
                         </div>
                     </>
                 )}
