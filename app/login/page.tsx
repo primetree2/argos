@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { LoginButton } from "@/components/auth/LoginButton";
+import { CircuitBackground } from "@/components/CircuitBackground";
 
 export default async function LoginPage() {
     const supabase = await createClient();
@@ -24,6 +25,7 @@ export default async function LoginPage() {
                 overflow: "hidden",
             }}
         >
+            <CircuitBackground />
             {/* ── Atmospheric corner rays ── */}
             <div
                 aria-hidden="true"
@@ -96,7 +98,7 @@ export default async function LoginPage() {
                             fontSize: "0.6rem",
                             letterSpacing: "0.28em",
                             color: "var(--text-gold)",
-                            opacity: 0.85,
+                            opacity: 1,
                             textTransform: "uppercase",
                             marginTop: "0.4rem",
                         }}
@@ -201,7 +203,7 @@ export default async function LoginPage() {
                         fontSize: "0.58rem",
                         letterSpacing: "0.25em",
                         color: "var(--text-tertiary)",
-                        opacity: 0.75,
+                        opacity: 0.95,
                         textTransform: "uppercase",
                     }}
                 >
@@ -213,7 +215,7 @@ export default async function LoginPage() {
                         fontSize: "0.75rem",
                         fontStyle: "italic",
                         color: "var(--text-tertiary)",
-                        opacity: 0.65,
+                        opacity: 0.9,
                         marginTop: "0.25rem",
                     }}
                 >

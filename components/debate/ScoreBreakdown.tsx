@@ -191,7 +191,7 @@ export function ScoreBreakdown({ argument: arg }: { argument: Argument }) {
                             fontSize: "0.55rem",
                             letterSpacing: "0.22em",
                             color: "var(--text-gold)",
-                            opacity: 0.7,
+                            opacity: 0.9,
                             textTransform: "uppercase",
                             marginBottom: "0.5rem",
                         }}

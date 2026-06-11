@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
+import { CircuitBackground } from "@/components/CircuitBackground";
 
 const SAMPLE_TOPICS = [
     "Social media does more harm than good",
@@ -38,13 +39,14 @@ export default function NewDebatePage() {
 
     return (
         <div style={{ minHeight: "100vh", background: "var(--bg-void)", color: "var(--text-primary)" }}>
+            <CircuitBackground intensity={0.7} />
             <Navbar />
 
             <main style={{ maxWidth: "560px", margin: "0 auto", padding: "3rem 1.5rem 4rem", position: "relative", zIndex: 1 }}>
 
                 {/* Header */}
                 <div className="reveal-1" style={{ marginBottom: "2.5rem" }}>
-                    <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.28em", color: "var(--text-gold)", opacity: 0.85, textTransform: "uppercase", marginBottom: "0.6rem" }}>
+                    <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.28em", color: "var(--text-gold)", opacity: 1, textTransform: "uppercase", marginBottom: "0.6rem" }}>
                         ◆ New Debate
                     </p>
                     <h1 style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "clamp(1.4rem, 4vw, 2rem)", fontWeight: 700, letterSpacing: "0.04em", marginBottom: "0.3rem" }}>
@@ -58,7 +60,7 @@ export default function NewDebatePage() {
                 {/* ── Topic ── */}
                 <div className="reveal-2" style={{ marginBottom: "1.75rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
-                        <label style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.7, textTransform: "uppercase" }}>
+                        <label style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase" }}>
                             Topic
                         </label>
                         <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", color: "var(--text-tertiary)", letterSpacing: "0.08em" }}>
@@ -114,10 +116,10 @@ export default function NewDebatePage() {
 
                 {/* ── Mode ── */}
                 <div className="reveal-3" style={{ marginBottom: "1.75rem" }}>
-                    <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.7, textTransform: "uppercase", marginBottom: "0.7rem" }}>
+                    <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "0.7rem" }}>
                         Mode
                     </label>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                         {(["casual", "ranked"] as const).map((m) => {
                             const active = mode === m;
                             const isRanked = m === "ranked";
@@ -160,7 +162,7 @@ export default function NewDebatePage() {
                 {/* ── Rounds ── */}
                 <div className="reveal-4" style={{ marginBottom: "2.25rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.7rem" }}>
-                        <label style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.7, textTransform: "uppercase" }}>
+                        <label style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase" }}>
                             Rounds
                         </label>
                         <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.1rem", color: "var(--gold)", letterSpacing: "0.1em", textShadow: "0 0 10px rgba(201,168,76,0.4)" }}>

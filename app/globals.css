@@ -47,10 +47,10 @@
   --red-border: rgba(255, 68, 68, 0.30);
 
   /* Text */
-  --text-primary: #f0ead8;
-  --text-secondary: #b8a98a;
-  --text-tertiary: #7a6e5c;
-  --text-gold: #c9a84c;
+  --text-primary: #f5efe0;
+  --text-secondary: #cfc0a0;
+  --text-tertiary: #9a8c78;
+  --text-gold: #d4a84c;
   --text-teal: #00ffe0;
 
   /* Borders */
@@ -84,13 +84,13 @@
   --bg-glass: rgba(240, 234, 216, 0.80);
   --bg-glass-hover: rgba(232, 223, 198, 0.90);
 
-  --gold: #9a6e20;
-  --gold-bright: #b8862a;
+  --gold: #7a5210;
+  --gold-bright: #9a6820;
   --gold-dim: #c9a84c;
-  --gold-glow: rgba(154, 110, 32, 0.15);
-  --gold-glow-strong: rgba(154, 110, 32, 0.28);
-  --gold-border: rgba(154, 110, 32, 0.30);
-  --gold-border-hover: rgba(154, 110, 32, 0.60);
+  --gold-glow: rgba(122, 82, 16, 0.12);
+  --gold-glow-strong: rgba(122, 82, 16, 0.25);
+  --gold-border: rgba(122, 82, 16, 0.28);
+  --gold-border-hover: rgba(122, 82, 16, 0.58);
 
   --teal: #006b5e;
   --teal-dim: rgba(0, 107, 94, 0.65);
@@ -101,11 +101,11 @@
   --red-glow: rgba(192, 57, 43, 0.12);
   --red-border: rgba(192, 57, 43, 0.28);
 
-  --text-primary: #1a1208;
-  --text-secondary: #4a3a22;
-  --text-tertiary: #7a6540;
-  --text-gold: #9a6e20;
-  --text-teal: #006b5e;
+  --text-primary: #120e06;
+  --text-secondary: #2e2010;
+  --text-tertiary: #5a4428;
+  --text-gold: #7a5210;
+  --text-teal: #005548;
 
   --border-default: rgba(154, 110, 32, 0.18);
   --border-subtle: rgba(0, 0, 0, 0.08);
@@ -749,4 +749,99 @@ h4 {
 
 .border-strong {
   border-color: var(--border-strong);
+}
+
+/* ─────────────────────────────────────────────
+   MOBILE RESPONSIVE — all breakpoints
+───────────────────────────────────────────── */
+
+/* ── Dashboard stat grid ── */
+@media (max-width: 640px) {
+  .stat-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .stat-elo {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+/* ── Dashboard + landing action/card grids ── */
+@media (max-width: 500px) {
+  .action-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .panel-grid-3col {
+    grid-template-columns: 1fr !important;
+  }
+
+  .how-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .mode-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Debate room: score tribune stacks ── */
+@media (max-width: 580px) {
+  .score-tribune {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  .score-tribune-bar {
+    width: 100% !important;
+  }
+
+  .debate-header-row {
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+}
+
+/* ── Debate room: result buttons stack ── */
+@media (max-width: 480px) {
+  .result-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .result-actions>* {
+    width: 100% !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+}
+
+/* ── Navbar join bar wraps ── */
+@media (max-width: 520px) {
+  .join-bar-row {
+    flex-wrap: wrap !important;
+  }
+
+  .join-bar-label {
+    width: 100% !important;
+  }
+}
+
+/* ── General padding reduction on small phones ── */
+@media (max-width: 400px) {
+  main {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .glass-card {
+    border-radius: var(--radius-md) !important;
+  }
+}
+
+/* ── Landing hero title — prevent overflow ── */
+@media (max-width: 360px) {
+  h1.hero-title {
+    font-size: 3rem !important;
+  }
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
+import { CircuitBackground } from "@/components/CircuitBackground";
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -21,6 +22,7 @@ export default async function HomePage() {
       }}
     >
       {/* ── Navbar ── */}
+      <CircuitBackground />
       <Navbar hideAuth={false} />
 
       {/* ── Circuit grid background decoration ── */}
@@ -217,7 +219,7 @@ export default async function HomePage() {
 
         {/* ── Instrument panel row ── */}
         <div
-          className="reveal-5"
+          className="reveal-5 panel-grid-3col"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
@@ -274,7 +276,7 @@ export default async function HomePage() {
                       : i === 1
                         ? "var(--teal)"
                         : "var(--gold-dim)",
-                  opacity: 0.85,
+                  opacity: 1,
                 }}
               />
 
@@ -342,7 +344,7 @@ export default async function HomePage() {
                 fontSize: "0.62rem",
                 letterSpacing: "0.28em",
                 color: "var(--text-gold)",
-                opacity: 0.9,
+                opacity: 1,
                 textTransform: "uppercase",
                 whiteSpace: "nowrap",
               }}
@@ -353,6 +355,7 @@ export default async function HomePage() {
           </div>
 
           <div
+            className="how-cards-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
@@ -396,7 +399,7 @@ export default async function HomePage() {
                     fontSize: "0.65rem",
                     letterSpacing: "0.2em",
                     color: "var(--text-gold)",
-                    opacity: 0.7,
+                    opacity: 0.9,
                     marginBottom: "0.6rem",
                   }}
                 >

@@ -279,6 +279,7 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                     }}
                 >
                     <div
+                        className="join-bar-row"
                         style={{
                             maxWidth: "1100px",
                             margin: "0 auto",
@@ -289,6 +290,7 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                     >
                         {/* Label */}
                         <span
+                            className="join-bar-label"
                             style={{
                                 fontFamily: "var(--font-cinzel), serif",
                                 fontSize: "0.62rem",

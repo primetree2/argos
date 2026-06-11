@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { Navbar } from "@/components/Navbar";
+import { CircuitBackground } from "@/components/CircuitBackground";
 
 interface Argument {
     id: string;
@@ -144,11 +145,12 @@ export function DebateRoom({
         <div style={{ minHeight: "100vh", background: "var(--bg-void)", color: "var(--text-primary)", display: "flex", flexDirection: "column" }}>
 
             {/* ── Navbar (hideJoinBar on debate page) ── */}
+            <CircuitBackground intensity={0.45} />
             <Navbar hideJoinBar />
 
             {/* ── Debate header ── */}
             <div style={{ borderBottom: "1px solid var(--border-default)", background: "var(--bg-surface)" }}>
-                <div style={{ maxWidth: "780px", margin: "0 auto", padding: "0.875rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+                <div style={{ maxWidth: "780px", margin: "0 auto", padding: "0.875rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }} className="debate-header-row">
                     <div style={{ minWidth: 0 }}>
                         <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: "0.3rem" }}>
                             {debate.mode.toUpperCase()} · Round {debate.current_round}/{debate.total_rounds}
@@ -166,7 +168,7 @@ export function DebateRoom({
             {/* ── Score tribune ── */}
             {(debate.status === "active" || debate.status === "scoring" || debate.status === "completed") && (
                 <div style={{ borderBottom: "1px solid var(--border-default)", background: "var(--bg-glass)", backdropFilter: "blur(8px)" }}>
-                    <div style={{ maxWidth: "780px", margin: "0 auto", padding: "0.75rem 1.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+                    <div style={{ maxWidth: "780px", margin: "0 auto", padding: "0.75rem 1.5rem", display: "flex", alignItems: "center", gap: "1rem" }} className="score-tribune">
                         {/* My score */}
                         <div style={{ textAlign: "left", minWidth: "4rem" }}>
                             <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.5rem", color: "var(--gold)", letterSpacing: "0.06em", lineHeight: 1, textShadow: "0 0 16px rgba(201,168,76,0.35)" }}>{myScore}</p>
@@ -174,7 +176,7 @@ export function DebateRoom({
                         </div>
 
                         {/* Progress bar */}
-                        <div style={{ flex: 1, position: "relative" }}>
+                        <div className="score-tribune-bar" style={{ flex: 1, position: "relative" }}>
                             <div style={{ height: "2px", background: "var(--bg-elevated)", borderRadius: "2px", overflow: "hidden" }}>
                                 <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${totalPossible ? (myScore / totalPossible) * 100 : 0}%`, background: "linear-gradient(90deg, var(--gold) 0%, var(--gold-bright) 100%)", borderRadius: "2px", transition: "width 0.8s ease", boxShadow: "0 0 6px rgba(201,168,76,0.4)" }} />
                             </div>
@@ -206,7 +208,7 @@ export function DebateRoom({
                                         <circle cx="14" cy="15" r="1.5" fill="var(--gold)" />
                                     </svg>
                                 </div>
-                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.24em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "0.75rem" }}>
+                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.24em", color: "var(--text-gold)", opacity: 1, textTransform: "uppercase", marginBottom: "0.75rem" }}>
                                     Awaiting Your Opponent
                                 </p>
                                 <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.95rem", color: "var(--text-secondary)", marginBottom: "1.75rem", lineHeight: 1.6 }}>
@@ -223,7 +225,7 @@ export function DebateRoom({
                             </div>
                         ) : (
                             <div className="glass-card" style={{ width: "100%", maxWidth: "480px", padding: "2.5rem 2rem", textAlign: "center" }}>
-                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.24em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "1rem" }}>Challenge Received</p>
+                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.24em", color: "var(--text-gold)", opacity: 1, textTransform: "uppercase", marginBottom: "1rem" }}>Challenge Received</p>
                                 <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>The motion before you:</p>
                                 <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "2rem", lineHeight: 1.4 }}>{debate.topics.title}</p>
                                 <div className="gold-rule" style={{ marginBottom: "2rem" }} />
@@ -275,7 +277,7 @@ export function DebateRoom({
                                         </p>
 
                                         {arg.scoring_status === "scoring" && (
-                                            <p style={{ marginTop: "0.75rem", fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.2em", color: "var(--text-gold)", opacity: 0.85, animation: "oracle-pulse 1.5s ease-in-out infinite" }}>
+                                            <p style={{ marginTop: "0.75rem", fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.2em", color: "var(--text-gold)", opacity: 1, animation: "oracle-pulse 1.5s ease-in-out infinite" }}>
                                                 ◆ Oracle deliberating…
                                             </p>
                                         )}
@@ -423,7 +425,7 @@ export function DebateRoom({
                                         boxShadow: won ? "var(--shadow-gold)" : "none",
                                     }}
                                 >
-                                    <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.28em", color: "var(--text-gold)", opacity: 0.85, textTransform: "uppercase", marginBottom: "1.5rem" }}>
+                                    <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.28em", color: "var(--text-gold)", opacity: 1, textTransform: "uppercase", marginBottom: "1.5rem" }}>
                                         Final Verdict
                                     </p>
 
@@ -446,7 +448,7 @@ export function DebateRoom({
                                         {won ? "Victory. The Oracle rules in your favour." : tied ? "A draw. The Oracle finds you equal." : "Defeat. Study the verdict and return stronger."}
                                     </p>
 
-                                    <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+                                    <div className="result-actions" style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
                                         <button
                                             onClick={() => handleCopy(typeof window !== "undefined" ? window.location.href : "")}
                                             className="btn-ghost"
