@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ScoreBreakdown } from "./ScoreBreakdown";
+import { Navbar } from "@/components/Navbar";
 
 interface Argument {
     id: string;
@@ -45,94 +46,50 @@ export function DebateRoom({
     const [debate, setDebate] = useState(initialDebate);
     const [argument, setArgument] = useState("");
     const [submitting, setSubmitting] = useState(false);
-    const [timeLeft, setTimeLeft] = useState(600); // 10 minutes
+    const [timeLeft, setTimeLeft] = useState(600);
     const [error, setError] = useState("");
+    const [copied, setCopied] = useState(false);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const supabase = createClient();
 
     const isPlayerA = debate.player_a_id === currentUserId;
-    const myArguments = debate.arguments.filter(
-        (a) => a.user_id === currentUserId
-    );
-    const opponentArguments = debate.arguments.filter(
-        (a) => a.user_id !== currentUserId
-    );
+    const myArguments = debate.arguments.filter((a) => a.user_id === currentUserId);
+    const opponentArguments = debate.arguments.filter((a) => a.user_id !== currentUserId);
     const isMyTurn = debate.current_turn === currentUserId;
-    const myScore = myArguments.reduce(
-        (sum, a) => sum + (a.score_total ?? 0),
-        0
-    );
-    const opponentScore = opponentArguments.reduce(
-        (sum, a) => sum + (a.score_total ?? 0),
-        0
-    );
-    const mySide = isPlayerA ? debate.player_a_side : debate.player_a_side === "FOR" ? "AGAINST" : "FOR";
+    const myScore = myArguments.reduce((sum, a) => sum + (a.score_total ?? 0), 0);
+    const opponentScore = opponentArguments.reduce((sum, a) => sum + (a.score_total ?? 0), 0);
+    const mySide = isPlayerA
+        ? debate.player_a_side
+        : debate.player_a_side === "FOR"
+            ? "AGAINST"
+            : "FOR";
+    const wordCount = argument.trim() ? argument.trim().split(/\s+/).length : 0;
+    const totalPossible = debate.total_rounds * 80;
 
-    // Realtime subscription
+    // ── Realtime (unchanged) ──
     useEffect(() => {
         const channel = supabase
             .channel(`debate:${debate.id}`)
-            .on(
-                "postgres_changes",
-                {
-                    event: "*",
-                    schema: "public",
-                    table: "debates",
-                    filter: `id=eq.${debate.id}`,
-                },
-                (payload) => {
-                    setDebate((prev) => ({ ...prev, ...(payload.new as Debate) }));
-                }
-            )
-            .on(
-                "postgres_changes",
-                {
-                    event: "*",
-                    schema: "public",
-                    table: "arguments",
-                    filter: `debate_id=eq.${debate.id}`,
-                },
+            .on("postgres_changes", { event: "*", schema: "public", table: "debates", filter: `id=eq.${debate.id}` },
+                (payload) => { setDebate((prev) => ({ ...prev, ...(payload.new as Debate) })); })
+            .on("postgres_changes", { event: "*", schema: "public", table: "arguments", filter: `debate_id=eq.${debate.id}` },
                 (payload) => {
                     setDebate((prev) => {
-                        const exists = prev.arguments.find(
-                            (a) => a.id === (payload.new as Argument).id
-                        );
-                        if (exists) {
-                            return {
-                                ...prev,
-                                arguments: prev.arguments.map((a) =>
-                                    a.id === (payload.new as Argument).id
-                                        ? (payload.new as Argument)
-                                        : a
-                                ),
-                            };
-                        }
-                        return {
-                            ...prev,
-                            arguments: [...prev.arguments, payload.new as Argument],
-                        };
+                        const exists = prev.arguments.find((a) => a.id === (payload.new as Argument).id);
+                        if (exists) return { ...prev, arguments: prev.arguments.map((a) => a.id === (payload.new as Argument).id ? (payload.new as Argument) : a) };
+                        return { ...prev, arguments: [...prev.arguments, payload.new as Argument] };
                     });
-                }
-            )
+                })
             .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, [debate.id]);
 
-    // Timer
+    // ── Timer (unchanged) ──
     useEffect(() => {
         if (!isMyTurn || debate.status !== "active") return;
         setTimeLeft(600);
         timerRef.current = setInterval(() => {
-            setTimeLeft((t) => {
-                if (t <= 1) {
-                    clearInterval(timerRef.current!);
-                    return 0;
-                }
-                return t - 1;
-            });
+            setTimeLeft((t) => { if (t <= 1) { clearInterval(timerRef.current!); return 0; } return t - 1; });
         }, 1000);
         return () => clearInterval(timerRef.current!);
     }, [isMyTurn, debate.current_round]);
@@ -143,172 +100,142 @@ export function DebateRoom({
         return `${m}:${sec.toString().padStart(2, "0")}`;
     };
 
+    // ── handleJoin (unchanged) ──
     const handleJoin = async () => {
         const res = await fetch(`/api/debates/${debate.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                player_b_id: currentUserId,
-                status: "active",
-            }),
+            body: JSON.stringify({ player_b_id: currentUserId, status: "active" }),
         });
         const data = await res.json();
         if (data.debate) setDebate((prev) => ({ ...prev, ...data.debate }));
     };
 
+    // ── handleSubmit (unchanged) ──
     const handleSubmit = async () => {
-        if (!argument.trim() || argument.trim().split(" ").length < 10) {
-            setError("Argument must be at least 10 words");
-            return;
-        }
-        setSubmitting(true);
-        setError("");
-
-        // Save argument
+        if (!argument.trim() || argument.trim().split(" ").length < 10) { setError("Argument must be at least 10 words."); return; }
+        setSubmitting(true); setError("");
         const { data: newArg, error: argError } = await supabase
             .from("arguments")
-            .insert({
-                debate_id: debate.id,
-                user_id: currentUserId,
-                round_number: debate.current_round,
-                content: argument.trim(),
-                scoring_status: "pending",
-            })
-            .select()
-            .single();
-
-        if (argError || !newArg) {
-            setError("Failed to submit argument");
-            setSubmitting(false);
-            return;
-        }
-
-        // Fetch fresh debate state before updating turn
-        const { data: freshDebate } = await supabase
-            .from("debates")
-            .select("player_a_id, player_b_id, current_round, total_rounds")
-            .eq("id", debate.id)
-            .single();
-
-        if (!freshDebate) {
-            setError("Failed to update debate state");
-            setSubmitting(false);
-            return;
-        }
-
-        const opponentId = freshDebate.player_a_id === currentUserId
-            ? freshDebate.player_b_id
-            : freshDebate.player_a_id;
-
-        const argsThisRound = debate.arguments.filter(
-            (a) => a.round_number === debate.current_round
-        ).length;
+            .insert({ debate_id: debate.id, user_id: currentUserId, round_number: debate.current_round, content: argument.trim(), scoring_status: "pending" })
+            .select().single();
+        if (argError || !newArg) { setError("Failed to submit argument."); setSubmitting(false); return; }
+        const { data: freshDebate } = await supabase.from("debates").select("player_a_id, player_b_id, current_round, total_rounds").eq("id", debate.id).single();
+        if (!freshDebate) { setError("Failed to update debate state."); setSubmitting(false); return; }
+        const opponentId = freshDebate.player_a_id === currentUserId ? freshDebate.player_b_id : freshDebate.player_a_id;
+        const argsThisRound = debate.arguments.filter((a) => a.round_number === debate.current_round).length;
         const isLastArgOfRound = argsThisRound >= 1;
-        const nextRound = isLastArgOfRound
-            ? debate.current_round + 1
-            : debate.current_round;
+        const nextRound = isLastArgOfRound ? debate.current_round + 1 : debate.current_round;
         const isLastRound = debate.current_round === debate.total_rounds;
         const isFinalSubmission = isLastArgOfRound && isLastRound;
-
-        await fetch(`/api/debates/${debate.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                current_turn: opponentId,
-                current_round: nextRound,
-                status: isFinalSubmission ? "scoring" : "active",
-            }),
-        });
-
-        // Trigger scoring
-        fetch("/api/score", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ argumentId: newArg.id }),
-        });
-
-        setArgument("");
-        setSubmitting(false);
-        clearInterval(timerRef.current!);
+        await fetch(`/api/debates/${debate.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ current_turn: opponentId, current_round: nextRound, status: isFinalSubmission ? "scoring" : "active" }) });
+        fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ argumentId: newArg.id }) });
+        setArgument(""); setSubmitting(false); clearInterval(timerRef.current!);
     };
 
-    const wordCount = argument.trim()
-        ? argument.trim().split(/\s+/).length
-        : 0;
+    const handleCopy = async (text: string) => {
+        try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { }
+    };
+
+    const timerWarning = timeLeft < 120 && timeLeft > 0;
+    const timerCritical = timeLeft < 60;
 
     return (
-        <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
-            {/* Header */}
-            <div className="border-b border-white/5 px-8 py-4">
-                <div className="max-w-3xl mx-auto flex items-center justify-between">
-                    <div>
-                        <p className="text-[10px] font-mono text-white/20 tracking-widest mb-1">
-                            {debate.mode.toUpperCase()} · ROUND {debate.current_round}/{debate.total_rounds}
+        <div style={{ minHeight: "100vh", background: "var(--bg-void)", color: "var(--text-primary)", display: "flex", flexDirection: "column" }}>
+
+            {/* ── Navbar (hideJoinBar on debate page) ── */}
+            <Navbar hideJoinBar />
+
+            {/* ── Debate header ── */}
+            <div style={{ borderBottom: "1px solid var(--border-default)", background: "var(--bg-surface)" }}>
+                <div style={{ maxWidth: "780px", margin: "0 auto", padding: "0.875rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+                    <div style={{ minWidth: 0 }}>
+                        <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: "0.3rem" }}>
+                            {debate.mode.toUpperCase()} · Round {debate.current_round}/{debate.total_rounds}
                         </p>
-                        <h1 className="text-base font-semibold tracking-tight">{debate.topics.title}</h1>
+                        <h1 style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "clamp(0.85rem, 2.5vw, 1.05rem)", fontWeight: 600, letterSpacing: "0.03em", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {debate.topics.title}
+                        </h1>
                     </div>
-                    <span className={`text-xs font-mono font-bold px-3 py-1.5 rounded-[4px] border tracking-wider ${mySide === "FOR"
-                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                        : "bg-red-500/10 border-red-500/20 text-red-400"
-                        }`}>
+                    <span className={mySide === "FOR" ? "badge-for" : "badge-against"}>
                         {mySide}
                     </span>
                 </div>
             </div>
 
-            {/* Score bar */}
-            <div className="border-b border-white/5 px-8 py-3">
-                <div className="max-w-3xl mx-auto flex items-center justify-between">
-                    <span className="font-mono text-sm font-bold text-[#f59e0b]">{myScore} <span className="text-[#f59e0b]/40 text-xs">YOU</span></span>
-                    <span className="text-[10px] font-mono text-white/15 tracking-widest">SCORE</span>
-                    <span className="font-mono text-sm font-bold text-white/40">{opponentScore} <span className="text-white/20 text-xs">OPP</span></span>
+            {/* ── Score tribune ── */}
+            {(debate.status === "active" || debate.status === "scoring" || debate.status === "completed") && (
+                <div style={{ borderBottom: "1px solid var(--border-default)", background: "var(--bg-glass)", backdropFilter: "blur(8px)" }}>
+                    <div style={{ maxWidth: "780px", margin: "0 auto", padding: "0.75rem 1.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+                        {/* My score */}
+                        <div style={{ textAlign: "left", minWidth: "4rem" }}>
+                            <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.5rem", color: "var(--gold)", letterSpacing: "0.06em", lineHeight: 1, textShadow: "0 0 16px rgba(201,168,76,0.35)" }}>{myScore}</p>
+                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.52rem", letterSpacing: "0.2em", color: "var(--text-gold)", opacity: 0.8, textTransform: "uppercase" }}>You</p>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div style={{ flex: 1, position: "relative" }}>
+                            <div style={{ height: "2px", background: "var(--bg-elevated)", borderRadius: "2px", overflow: "hidden" }}>
+                                <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${totalPossible ? (myScore / totalPossible) * 100 : 0}%`, background: "linear-gradient(90deg, var(--gold) 0%, var(--gold-bright) 100%)", borderRadius: "2px", transition: "width 0.8s ease", boxShadow: "0 0 6px rgba(201,168,76,0.4)" }} />
+                            </div>
+                            <p style={{ textAlign: "center", fontFamily: "var(--font-cinzel), serif", fontSize: "0.52rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase", marginTop: "0.35rem" }}>Score</p>
+                        </div>
+
+                        {/* Opponent score */}
+                        <div style={{ textAlign: "right", minWidth: "4rem" }}>
+                            <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.5rem", color: "var(--text-secondary)", letterSpacing: "0.06em", lineHeight: 1 }}>{opponentScore}</p>
+                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.52rem", letterSpacing: "0.2em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>Opp.</p>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
 
-            <div className="flex-1 max-w-3xl mx-auto w-full px-8 py-8 space-y-4">
+            {/* ── Main content ── */}
+            <div style={{ flex: 1, maxWidth: "780px", margin: "0 auto", width: "100%", padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
 
-                {/* Waiting state */}
+                {/* ═══ WAITING ═══ */}
                 {debate.status === "waiting" && (
-                    <div className="rounded-[6px] border border-white/5 bg-[#111] p-8 text-center">
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "3rem 1rem" }}>
                         {debate.player_a_id === currentUserId ? (
-                            <>
-                                <p className="text-[10px] font-mono text-white/20 tracking-widest mb-4">WAITING FOR OPPONENT</p>
-                                <p className="text-white/40 text-sm mb-6">Share this link to start the debate</p>
-                                <div className="flex gap-2 justify-center max-w-sm mx-auto">
-                                    <code className="flex-1 text-xs bg-white/5 border border-white/5 px-3 py-2 rounded-[4px] text-white/40 truncate font-mono">
+                            <div className="glass-card" style={{ width: "100%", maxWidth: "480px", padding: "2.5rem 2rem", textAlign: "center" }}>
+                                {/* Pulsing seal */}
+                                <div style={{ marginBottom: "1.5rem", display: "flex", justifyContent: "center" }}>
+                                    <svg width="56" height="56" viewBox="0 0 28 28" fill="none" style={{ animation: "oracle-pulse 2.5s ease-in-out infinite", filter: "drop-shadow(0 0 10px rgba(201,168,76,0.3))" }}>
+                                        <polygon points="14,2 26,24 2,24" fill="none" stroke="var(--gold)" strokeWidth="1.25" strokeLinejoin="round" />
+                                        <polygon points="14,8 21,21 7,21" fill="var(--gold-glow)" stroke="var(--gold-dim)" strokeWidth="0.75" strokeLinejoin="round" />
+                                        <circle cx="14" cy="15" r="1.5" fill="var(--gold)" />
+                                    </svg>
+                                </div>
+                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.24em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "0.75rem" }}>
+                                    Awaiting Your Opponent
+                                </p>
+                                <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.95rem", color: "var(--text-secondary)", marginBottom: "1.75rem", lineHeight: 1.6 }}>
+                                    Share the link below. The debate begins when they arrive.
+                                </p>
+                                <div style={{ display: "flex", gap: "0.5rem" }}>
+                                    <code style={{ flex: 1, fontFamily: "var(--font-share-tech), monospace", fontSize: "0.72rem", background: "var(--bg-elevated)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)", padding: "0.65rem 0.85rem", color: "var(--text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "0.03em" }}>
                                         {typeof window !== "undefined" ? window.location.href : ""}
                                     </code>
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                await navigator.clipboard.writeText(window.location.href);
-                                            } catch {
-                                                // Clipboard not available — silently ignore
-                                            }
-                                        }}
-                                        className="text-xs px-3 py-2 rounded-[4px] bg-[#f59e0b]/10 border border-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/20 transition-all"
-                                    >
-                                        Copy
+                                    <button onClick={() => handleCopy(typeof window !== "undefined" ? window.location.href : "")} style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: 600, color: copied ? "var(--bg-void)" : "var(--text-gold)", background: copied ? "var(--gold)" : "var(--gold-glow)", border: "1px solid var(--gold-border)", borderRadius: "var(--radius-md)", padding: "0.65rem 1rem", cursor: "pointer", flexShrink: 0, transition: "all 200ms ease", textTransform: "uppercase" }}>
+                                        {copied ? "✓ Copied" : "Copy"}
                                     </button>
                                 </div>
-                            </>
+                            </div>
                         ) : (
-                            <>
-                                <p className="text-[10px] font-mono text-white/20 tracking-widest mb-4">CHALLENGE RECEIVED</p>
-                                <p className="text-white/60 text-sm mb-2">You've been challenged</p>
-                                <p className="text-white font-semibold mb-8">{debate.topics.title}</p>
-                                <button
-                                    onClick={handleJoin}
-                                    className="bg-[#f59e0b] text-black font-bold px-8 py-3 rounded-[6px] hover:bg-[#fbbf24] transition-all text-sm tracking-wide shadow-[0_0_20px_rgba(245,158,11,0.2)]"
-                                >
-                                    ACCEPT & JOIN →
+                            <div className="glass-card" style={{ width: "100%", maxWidth: "480px", padding: "2.5rem 2rem", textAlign: "center" }}>
+                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.24em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "1rem" }}>Challenge Received</p>
+                                <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>The motion before you:</p>
+                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "2rem", lineHeight: 1.4 }}>{debate.topics.title}</p>
+                                <div className="gold-rule" style={{ marginBottom: "2rem" }} />
+                                <button onClick={handleJoin} className="btn-oracle" style={{ width: "100%", justifyContent: "center" }}>
+                                    Accept &amp; Enter the Arena →
                                 </button>
-                            </>
+                            </div>
                         )}
                     </div>
                 )}
 
-                {/* Active + scoring */}
+                {/* ═══ ACTIVE + SCORING ═══ */}
                 {(debate.status === "active" || debate.status === "scoring") && (
                     <>
                         {[...debate.arguments]
@@ -318,30 +245,43 @@ export function DebateRoom({
                                 return (
                                     <div
                                         key={arg.id}
-                                        className={`rounded-[6px] border p-5 transition-all duration-300 ${isMine
-                                            ? "border-[#f59e0b]/15 bg-[#f59e0b]/3"
-                                            : "border-white/5 bg-[#111]"
-                                            }`}
+                                        style={{
+                                            background: "var(--bg-glass)",
+                                            backdropFilter: "blur(12px)",
+                                            border: `1px solid ${isMine ? "var(--gold-border)" : "var(--teal-border)"}`,
+                                            borderTop: `2px solid ${isMine ? "var(--gold)" : "var(--teal)"}`,
+                                            borderRadius: "var(--radius-lg)",
+                                            padding: "1.25rem",
+                                            marginLeft: isMine ? "auto" : "0",
+                                            marginRight: isMine ? "0" : "auto",
+                                            width: "calc(100% - 0px)",
+                                            boxShadow: isMine ? "var(--shadow-gold-sm)" : "var(--shadow-teal)",
+                                            transition: "box-shadow 300ms ease",
+                                        }}
                                     >
-                                        <div className="flex items-center justify-between mb-3">
-                                            <p className="text-[10px] font-mono tracking-widest text-white/20">
-                                                {isMine ? "YOU" : "OPPONENT"} · ROUND {arg.round_number}
-                                            </p>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                                            <span className={isMine ? "badge-for" : "badge-against"} style={{ fontSize: "0.55rem" }}>
+                                                {isMine ? "You" : "Opponent"} · R{arg.round_number}
+                                            </span>
                                             {arg.scoring_status === "done" && (
-                                                <span className={`text-xs font-mono font-bold ${isMine ? "text-[#f59e0b]" : "text-white/40"}`}>
+                                                <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.85rem", color: isMine ? "var(--gold)" : "var(--text-secondary)", letterSpacing: "0.06em" }}>
                                                     {arg.score_total}/80
                                                 </span>
                                             )}
                                         </div>
-                                        <p className="text-white/70 text-sm leading-relaxed">{arg.content}</p>
+
+                                        <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.7, opacity: 0.85 }}>
+                                            {arg.content}
+                                        </p>
+
                                         {arg.scoring_status === "scoring" && (
-                                            <p className="mt-3 text-[11px] font-mono text-[#f59e0b]/50 animate-pulse tracking-wider">
-                                                AI SCORING...
+                                            <p style={{ marginTop: "0.75rem", fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.2em", color: "var(--text-gold)", opacity: 0.85, animation: "oracle-pulse 1.5s ease-in-out infinite" }}>
+                                                ◆ Oracle deliberating…
                                             </p>
                                         )}
                                         {arg.scoring_status === "pending" && (
-                                            <p className="mt-3 text-[11px] font-mono text-white/20 animate-pulse tracking-wider">
-                                                QUEUED...
+                                            <p style={{ marginTop: "0.75rem", fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.2em", color: "var(--text-tertiary)", animation: "oracle-pulse 2s ease-in-out infinite" }}>
+                                                ◆ Queued…
                                             </p>
                                         )}
                                         {arg.scoring_status === "done" && <ScoreBreakdown argument={arg} />}
@@ -349,48 +289,82 @@ export function DebateRoom({
                                 );
                             })}
 
+                        {/* Waiting for opponent */}
                         {!isMyTurn && debate.status === "active" && (
-                            <div className="rounded-[6px] border border-white/5 bg-[#111] p-5 text-center">
-                                <p className="text-[11px] font-mono text-white/20 animate-pulse tracking-widest">
-                                    WAITING FOR OPPONENT...
-                                </p>
+                            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-lg)", padding: "1.5rem", textAlign: "center" }}>
+                                <div style={{ display: "inline-flex", alignItems: "center", gap: "0.6rem" }}>
+                                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--teal)", boxShadow: "0 0 8px var(--teal)", animation: "oracle-pulse 1.8s ease-in-out infinite", flexShrink: 0, display: "inline-block" }} />
+                                    <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
+                                        Awaiting opponent's argument
+                                    </span>
+                                </div>
                             </div>
                         )}
 
+                        {/* Scoring all final */}
                         {debate.status === "scoring" && (
-                            <div className="rounded-[6px] border border-[#f59e0b]/10 bg-[#f59e0b]/3 p-5 text-center">
-                                <p className="text-[11px] font-mono text-[#f59e0b]/50 animate-pulse tracking-widest">
-                                    AI SCORING FINAL ARGUMENTS...
+                            <div style={{ background: "var(--gold-glow)", border: "1px solid var(--gold-border)", borderRadius: "var(--radius-lg)", padding: "1.25rem", textAlign: "center" }}>
+                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.22em", color: "var(--text-gold)", textTransform: "uppercase", animation: "oracle-pulse 2s ease-in-out infinite" }}>
+                                    ◆ Oracle scoring final arguments…
                                 </p>
                             </div>
                         )}
 
+                        {/* Input area */}
                         {isMyTurn && debate.status === "active" && (
-                            <div className="rounded-[6px] border border-[#f59e0b]/25 bg-[#f59e0b]/3 p-5 shadow-[0_0_20px_rgba(245,158,11,0.06)]">
-                                <div className="flex items-center justify-between mb-3">
-                                    <p className="text-[10px] font-mono text-[#f59e0b]/60 tracking-widest">YOUR ARGUMENT</p>
-                                    <div className="flex items-center gap-4 text-[11px] font-mono">
-                                        <span className="text-white/20">{wordCount} words</span>
-                                        <span className={timeLeft < 60 ? "text-red-400" : "text-white/20"}>
+                            <div
+                                className="glass-card glass-card-gold"
+                                style={{ padding: "1.25rem", boxShadow: "var(--shadow-gold)" }}
+                            >
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                                    <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", textTransform: "uppercase", opacity: 0.75 }}>
+                                        Your Argument · Round {debate.current_round}
+                                    </p>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.7rem", color: "var(--text-tertiary)", letterSpacing: "0.06em" }}>
+                                            {wordCount}w
+                                        </span>
+                                        <span
+                                            style={{
+                                                fontFamily: "var(--font-share-tech), monospace",
+                                                fontSize: timerCritical ? "1rem" : "0.82rem",
+                                                letterSpacing: "0.08em",
+                                                color: timerCritical ? "var(--red-neon)" : timerWarning ? "var(--gold)" : "var(--text-tertiary)",
+                                                textShadow: timerCritical ? "0 0 10px var(--red-neon)" : timerWarning ? "0 0 8px rgba(201,168,76,0.4)" : "none",
+                                                transition: "all 300ms ease",
+                                                animation: timerCritical ? "oracle-pulse 1s ease-in-out infinite" : "none",
+                                            }}
+                                        >
                                             {formatTime(timeLeft)}
                                         </span>
                                     </div>
                                 </div>
+
                                 <textarea
                                     value={argument}
-                                    onChange={(e) => setArgument(e.target.value)}
-                                    placeholder="Make your argument. Be specific, cite evidence, address your opponent..."
-                                    className="w-full rounded-[4px] border border-white/5 bg-black/40 px-4 py-3 text-white placeholder-white/15 resize-none focus:outline-none focus:border-[#f59e0b]/20 transition-all text-sm leading-relaxed"
+                                    onChange={(e) => { setArgument(e.target.value); if (error) setError(""); }}
+                                    placeholder="Make your argument. Be specific, cite evidence, address your opponent…"
                                     rows={5}
+                                    className="oracle-input"
+                                    style={{ resize: "none", marginBottom: "0.75rem" }}
                                 />
-                                {error && <p className="mt-2 text-xs text-red-400 font-mono">{error}</p>}
-                                <div className="mt-3 flex justify-end">
+
+                                {error && (
+                                    <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.7rem", color: "var(--red-neon)", letterSpacing: "0.06em", marginBottom: "0.75rem", padding: "0.5rem 0.75rem", background: "var(--red-glow)", border: "1px solid var(--red-border)", borderRadius: "var(--radius-md)" }}>
+                                        ⚠ {error}
+                                    </p>
+                                )}
+
+                                <div style={{ display: "flex", justifyContent: "flex-end" }}>
                                     <button
                                         onClick={handleSubmit}
                                         disabled={submitting}
-                                        className="bg-[#f59e0b] text-black font-bold px-6 py-2.5 rounded-[4px] hover:bg-[#fbbf24] transition-all disabled:opacity-40 text-xs tracking-wider shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                                        className="btn-oracle"
+                                        style={{ fontSize: "0.7rem", letterSpacing: "0.18em", padding: "0.7rem 1.5rem" }}
                                     >
-                                        {submitting ? "SUBMITTING..." : "SUBMIT →"}
+                                        {submitting ? (
+                                            <><span style={{ animation: "oracle-pulse 1s ease-in-out infinite" }}>◆</span>&nbsp;Submitting…</>
+                                        ) : "Submit →"}
                                     </button>
                                 </div>
                             </div>
@@ -398,7 +372,7 @@ export function DebateRoom({
                     </>
                 )}
 
-                {/* Completed */}
+                {/* ═══ COMPLETED ═══ */}
                 {debate.status === "completed" && (
                     <>
                         {[...debate.arguments]
@@ -408,71 +382,84 @@ export function DebateRoom({
                                 return (
                                     <div
                                         key={arg.id}
-                                        className={`rounded-[6px] border p-5 ${isMine ? "border-[#f59e0b]/15 bg-[#f59e0b]/3" : "border-white/5 bg-[#111]"
-                                            }`}
+                                        style={{
+                                            background: "var(--bg-glass)",
+                                            backdropFilter: "blur(12px)",
+                                            border: `1px solid ${isMine ? "var(--gold-border)" : "var(--teal-border)"}`,
+                                            borderTop: `2px solid ${isMine ? "var(--gold)" : "var(--teal)"}`,
+                                            borderRadius: "var(--radius-lg)",
+                                            padding: "1.25rem",
+                                        }}
                                     >
-                                        <div className="flex items-center justify-between mb-3">
-                                            <p className="text-[10px] font-mono tracking-widest text-white/20">
-                                                {isMine ? "YOU" : "OPPONENT"} · ROUND {arg.round_number}
-                                            </p>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                                            <span className={isMine ? "badge-for" : "badge-against"} style={{ fontSize: "0.55rem" }}>
+                                                {isMine ? "You" : "Opponent"} · R{arg.round_number}
+                                            </span>
                                             {arg.scoring_status === "done" && (
-                                                <span className={`text-xs font-mono font-bold ${isMine ? "text-[#f59e0b]" : "text-white/40"}`}>
+                                                <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.85rem", color: isMine ? "var(--gold)" : "var(--text-secondary)", letterSpacing: "0.06em" }}>
                                                     {arg.score_total}/80
                                                 </span>
                                             )}
                                         </div>
-                                        <p className="text-white/60 text-sm leading-relaxed">{arg.content}</p>
+                                        <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{arg.content}</p>
                                         {arg.scoring_status === "done" && <ScoreBreakdown argument={arg} />}
                                     </div>
                                 );
                             })}
 
                         {/* Result card */}
-                        <div className={`rounded-[6px] border p-8 text-center ${myScore > opponentScore
-                            ? "border-[#f59e0b]/30 bg-[#f59e0b]/5 shadow-[0_0_40px_rgba(245,158,11,0.1)]"
-                            : "border-white/5 bg-[#111]"
-                            }`}>
-                            <p className="text-[10px] font-mono tracking-widest text-white/20 mb-6">FINAL RESULT</p>
-                            <div className="flex justify-center gap-16 mb-8">
-                                <div>
-                                    <p className="text-5xl font-bold font-mono text-[#f59e0b]">{myScore}</p>
-                                    <p className="text-[10px] font-mono text-white/20 mt-2 tracking-widest">YOU</p>
-                                </div>
-                                <div className="text-white/10 font-mono text-2xl self-center">VS</div>
-                                <div>
-                                    <p className="text-5xl font-bold font-mono text-white/30">{opponentScore}</p>
-                                    <p className="text-[10px] font-mono text-white/20 mt-2 tracking-widest">OPPONENT</p>
-                                </div>
-                            </div>
-                            <p className="text-lg font-bold mb-6">
-                                {myScore > opponentScore
-                                    ? "🏆 You won this debate."
-                                    : myScore < opponentScore
-                                        ? "You lost. Study the feedback and come back stronger."
-                                        : "Dead even. Rematch?"}
-                            </p>
-                            <div className="flex gap-3 justify-center">
-                                <button
-                                    onClick={async () => {
-                                        try {
-                                            await navigator.clipboard.writeText(window.location.href);
-                                        } catch {
-                                            // Clipboard not available — silently ignore
-                                        }
-                                        alert("Link copied!");
+                        {(() => {
+                            const won = myScore > opponentScore;
+                            const tied = myScore === opponentScore;
+                            return (
+                                <div
+                                    style={{
+                                        background: won ? "var(--gold-glow)" : "var(--bg-surface)",
+                                        border: `1px solid ${won ? "var(--gold-border-hover)" : "var(--border-default)"}`,
+                                        borderTop: `2px solid ${won ? "var(--gold)" : "var(--border-default)"}`,
+                                        borderRadius: "var(--radius-lg)",
+                                        padding: "2.5rem 1.5rem",
+                                        textAlign: "center",
+                                        boxShadow: won ? "var(--shadow-gold)" : "none",
                                     }}
-                                    className="border border-white/10 text-white/40 px-5 py-2.5 rounded-[4px] hover:bg-white/5 transition-all text-xs font-mono tracking-wider"
                                 >
-                                    SHARE
-                                </button>
-                                <button
+                                    <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.28em", color: "var(--text-gold)", opacity: 0.85, textTransform: "uppercase", marginBottom: "1.5rem" }}>
+                                        Final Verdict
+                                    </p>
 
-                                    className="bg-[#f59e0b] text-black font-bold px-5 py-2.5 rounded-[4px] hover:bg-[#fbbf24] transition-all text-xs tracking-wider"
-                                >
-                                    BACK TO HOME →
-                                </button>
-                            </div>
-                        </div>
+                                    {/* Scores */}
+                                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "2rem", marginBottom: "1.75rem" }}>
+                                        <div>
+                                            <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "clamp(2.5rem, 8vw, 4rem)", color: "var(--gold)", lineHeight: 1, textShadow: won ? "0 0 30px rgba(201,168,76,0.5)" : "none" }}>{myScore}</p>
+                                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.55rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.8, textTransform: "uppercase", marginTop: "0.4rem" }}>You</p>
+                                        </div>
+                                        <div style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.75rem", letterSpacing: "0.2em", color: "var(--text-tertiary)" }}>VS</div>
+                                        <div>
+                                            <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "clamp(2.5rem, 8vw, 4rem)", color: won ? "var(--text-tertiary)" : "var(--text-secondary)", lineHeight: 1 }}>{opponentScore}</p>
+                                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.55rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase", marginTop: "0.4rem" }}>Opponent</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="gold-rule-subtle" style={{ marginBottom: "1.5rem" }} />
+
+                                    <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "clamp(0.9rem, 2.5vw, 1.1rem)", fontWeight: 600, color: won ? "var(--gold)" : "var(--text-primary)", letterSpacing: "0.05em", marginBottom: "1.75rem" }}>
+                                        {won ? "Victory. The Oracle rules in your favour." : tied ? "A draw. The Oracle finds you equal." : "Defeat. Study the verdict and return stronger."}
+                                    </p>
+
+                                    <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+                                        <button
+                                            onClick={() => handleCopy(typeof window !== "undefined" ? window.location.href : "")}
+                                            className="btn-ghost"
+                                        >
+                                            {copied ? "✓ Copied" : "Share Result"}
+                                        </button>
+                                        <a href="/dashboard" className="btn-oracle" style={{ textDecoration: "none" }}>
+                                            Return to Arena →
+                                        </a>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </>
                 )}
             </div>

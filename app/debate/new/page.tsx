@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Navbar } from "@/components/Navbar";
 
 const SAMPLE_TOPICS = [
     "Social media does more harm than good",
@@ -20,7 +21,7 @@ export default function NewDebatePage() {
     const [error, setError] = useState("");
 
     const handleCreate = async () => {
-        if (!topic.trim()) { setError("Enter a topic to continue"); return; }
+        if (!topic.trim()) { setError("Enter a topic to continue."); return; }
         setLoading(true);
         setError("");
         const res = await fetch("/api/debates", {
@@ -29,45 +30,81 @@ export default function NewDebatePage() {
             body: JSON.stringify({ topic, mode, totalRounds: rounds }),
         });
         const data = await res.json();
-        if (!res.ok) { setError(data.error ?? "Something went wrong"); setLoading(false); return; }
+        if (!res.ok) { setError(data.error ?? "Something went wrong."); setLoading(false); return; }
         router.push(`/debate/${data.debate.id}`);
     };
 
+    const wordCount = topic.trim() ? topic.trim().split(/\s+/).length : 0;
+
     return (
-        <div className="min-h-screen bg-[#0a0a0a] text-white">
-            <nav className="border-b border-white/5 px-8 py-4 flex items-center gap-4">
-                <button
-                    onClick={() => router.push("/dashboard")}
-                    className="text-white/30 hover:text-white transition-colors text-sm"
-                >
-                    ← Back
-                </button>
-                <span className="text-white/10">|</span>
-                <span className="text-xs text-white/30 font-mono tracking-widest">NEW DEBATE</span>
-            </nav>
+        <div style={{ minHeight: "100vh", background: "var(--bg-void)", color: "var(--text-primary)" }}>
+            <Navbar />
 
-            <main className="max-w-lg mx-auto px-8 py-12">
-                <p className="text-[#f59e0b] font-mono text-xs tracking-widest mb-2">SETUP</p>
-                <h1 className="text-2xl font-bold tracking-tight mb-8">Configure your debate</h1>
+            <main style={{ maxWidth: "560px", margin: "0 auto", padding: "3rem 1.5rem 4rem", position: "relative", zIndex: 1 }}>
 
-                {/* Topic */}
-                <div className="mb-6">
-                    <label className="block text-[10px] font-mono text-white/30 tracking-widest mb-2">
-                        TOPIC
-                    </label>
+                {/* Header */}
+                <div className="reveal-1" style={{ marginBottom: "2.5rem" }}>
+                    <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.28em", color: "var(--text-gold)", opacity: 0.85, textTransform: "uppercase", marginBottom: "0.6rem" }}>
+                        ◆ New Debate
+                    </p>
+                    <h1 style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "clamp(1.4rem, 4vw, 2rem)", fontWeight: 700, letterSpacing: "0.04em", marginBottom: "0.3rem" }}>
+                        Configure the Trial
+                    </h1>
+                    <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", color: "var(--text-secondary)", fontSize: "0.95rem" }}>
+                        Choose your topic. The Oracle will judge every word.
+                    </p>
+                </div>
+
+                {/* ── Topic ── */}
+                <div className="reveal-2" style={{ marginBottom: "1.75rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+                        <label style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.7, textTransform: "uppercase" }}>
+                            Topic
+                        </label>
+                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", color: "var(--text-tertiary)", letterSpacing: "0.08em" }}>
+                            {wordCount} {wordCount === 1 ? "word" : "words"}
+                        </span>
+                    </div>
+
                     <textarea
                         value={topic}
-                        onChange={(e) => setTopic(e.target.value)}
-                        placeholder="State your debate topic clearly..."
-                        className="w-full rounded-[6px] border border-white/8 bg-[#111] px-4 py-3 text-white placeholder-white/15 resize-none focus:outline-none focus:border-[#f59e0b]/40 focus:shadow-[0_0_15px_rgba(245,158,11,0.08)] transition-all duration-200 text-sm"
+                        onChange={(e) => { setTopic(e.target.value); if (error) setError(""); }}
+                        placeholder="State your debate topic clearly…"
                         rows={3}
+                        className="oracle-input"
+                        style={{ resize: "none" }}
                     />
-                    <div className="mt-3 flex flex-wrap gap-2">
+
+                    {/* Sample topic chips */}
+                    <div style={{ marginTop: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
                         {SAMPLE_TOPICS.map((t) => (
                             <button
                                 key={t}
                                 onClick={() => setTopic(t)}
-                                className="text-[11px] px-3 py-1 rounded-[4px] border border-white/8 text-white/30 hover:text-white/60 hover:border-white/15 transition-all duration-150"
+                                style={{
+                                    fontFamily: "var(--font-crimson), serif",
+                                    fontStyle: "italic",
+                                    fontSize: "0.8rem",
+                                    padding: "0.3rem 0.75rem",
+                                    background: "var(--bg-surface)",
+                                    border: "1px solid var(--border-default)",
+                                    borderRadius: "var(--radius-sm)",
+                                    color: "var(--text-secondary)",
+                                    cursor: "pointer",
+                                    transition: "color 150ms ease, border-color 150ms ease, background 150ms ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                    const el = e.currentTarget as HTMLButtonElement;
+                                    el.style.color = "var(--text-gold)";
+                                    el.style.borderColor = "var(--gold-border-hover)";
+                                    el.style.background = "var(--gold-glow)";
+                                }}
+                                onMouseLeave={(e) => {
+                                    const el = e.currentTarget as HTMLButtonElement;
+                                    el.style.color = "var(--text-secondary)";
+                                    el.style.borderColor = "var(--border-default)";
+                                    el.style.background = "var(--bg-surface)";
+                                }}
                             >
                                 {t}
                             </button>
@@ -75,56 +112,110 @@ export default function NewDebatePage() {
                     </div>
                 </div>
 
-                {/* Mode */}
-                <div className="mb-6">
-                    <label className="block text-[10px] font-mono text-white/30 tracking-widest mb-2">
-                        MODE
+                {/* ── Mode ── */}
+                <div className="reveal-3" style={{ marginBottom: "1.75rem" }}>
+                    <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.7, textTransform: "uppercase", marginBottom: "0.7rem" }}>
+                        Mode
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
-                        {(["casual", "ranked"] as const).map((m) => (
-                            <button
-                                key={m}
-                                onClick={() => setMode(m)}
-                                className={`rounded-[6px] border p-4 text-left transition-all duration-200 ${mode === m
-                                        ? "border-[#f59e0b]/40 bg-[#f59e0b]/5 shadow-[0_0_15px_rgba(245,158,11,0.08)]"
-                                        : "border-white/5 bg-[#111] hover:border-white/10"
-                                    }`}
-                            >
-                                <p className={`text-sm font-semibold capitalize ${mode === m ? "text-[#f59e0b]" : "text-white"}`}>
-                                    {m}
-                                </p>
-                                <p className="text-xs text-white/30 mt-1">
-                                    {m === "casual" ? "No Elo changes" : "Elo rating affected"}
-                                </p>
-                            </button>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        {(["casual", "ranked"] as const).map((m) => {
+                            const active = mode === m;
+                            const isRanked = m === "ranked";
+                            return (
+                                <button
+                                    key={m}
+                                    onClick={() => setMode(m)}
+                                    style={{
+                                        background: active ? (isRanked ? "var(--gold-glow)" : "rgba(0,255,224,0.06)") : "var(--bg-surface)",
+                                        border: `1px solid ${active ? (isRanked ? "var(--gold-border-hover)" : "var(--teal-border)") : "var(--border-default)"}`,
+                                        borderTop: active ? `2px solid ${isRanked ? "var(--gold)" : "var(--teal)"}` : "2px solid transparent",
+                                        borderRadius: "var(--radius-lg)",
+                                        padding: "1.25rem",
+                                        textAlign: "left",
+                                        cursor: "pointer",
+                                        transition: "all 200ms ease",
+                                        boxShadow: active ? (isRanked ? "var(--shadow-gold-sm)" : "var(--shadow-teal)") : "none",
+                                    }}
+                                >
+                                    <p style={{
+                                        fontFamily: "var(--font-cinzel), serif",
+                                        fontSize: "0.82rem",
+                                        fontWeight: 600,
+                                        letterSpacing: "0.08em",
+                                        textTransform: "capitalize",
+                                        color: active ? (isRanked ? "var(--text-gold)" : "var(--teal)") : "var(--text-primary)",
+                                        marginBottom: "0.35rem",
+                                    }}>
+                                        {m}
+                                    </p>
+                                    <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                                        {m === "casual" ? "No Elo changes. Stakes are low." : "Elo rating affected. Glory or ruin."}
+                                    </p>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* ── Rounds ── */}
+                <div className="reveal-4" style={{ marginBottom: "2.25rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.7rem" }}>
+                        <label style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.7, textTransform: "uppercase" }}>
+                            Rounds
+                        </label>
+                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.1rem", color: "var(--gold)", letterSpacing: "0.1em", textShadow: "0 0 10px rgba(201,168,76,0.4)" }}>
+                            {rounds}
+                        </span>
+                    </div>
+
+                    {/* Custom styled range */}
+                    <style>{`
+            .oracle-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; background: var(--bg-elevated); border-radius: 2px; outline: none; cursor: pointer; }
+            .oracle-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--gold); border: 2px solid var(--bg-void); box-shadow: 0 0 10px rgba(201,168,76,0.5); cursor: pointer; transition: transform 150ms ease, box-shadow 150ms ease; }
+            .oracle-range::-webkit-slider-thumb:hover { transform: scale(1.2); box-shadow: 0 0 16px rgba(201,168,76,0.7); }
+            .oracle-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--gold); border: 2px solid var(--bg-void); box-shadow: 0 0 10px rgba(201,168,76,0.5); cursor: pointer; }
+          `}</style>
+
+                    <input
+                        type="range" min={2} max={5} value={rounds}
+                        onChange={(e) => setRounds(Number(e.target.value))}
+                        className="oracle-range"
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.4rem" }}>
+                        {[2, 3, 4, 5].map((n) => (
+                            <span key={n} style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", color: rounds === n ? "var(--gold)" : "var(--text-tertiary)", letterSpacing: "0.06em", transition: "color 150ms ease" }}>
+                                {n}
+                            </span>
                         ))}
                     </div>
                 </div>
 
-                {/* Rounds */}
-                <div className="mb-8">
-                    <label className="block text-[10px] font-mono text-white/30 tracking-widest mb-2">
-                        ROUNDS — <span className="text-[#f59e0b]">{rounds}</span>
-                    </label>
-                    <input
-                        type="range" min={2} max={5} value={rounds}
-                        onChange={(e) => setRounds(Number(e.target.value))}
-                        className="w-full accent-[#f59e0b]"
-                    />
-                    <div className="flex justify-between text-[10px] text-white/20 font-mono mt-1">
-                        <span>2</span><span>5</span>
-                    </div>
+                {/* Error */}
+                {error && (
+                    <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.72rem", color: "var(--red-neon)", letterSpacing: "0.06em", marginBottom: "1rem", padding: "0.6rem 0.85rem", background: "var(--red-glow)", border: "1px solid var(--red-border)", borderRadius: "var(--radius-md)" }}>
+                        ⚠ {error}
+                    </p>
+                )}
+
+                {/* Submit */}
+                <div className="reveal-5">
+                    <button
+                        onClick={handleCreate}
+                        disabled={loading}
+                        className="btn-oracle"
+                        style={{ width: "100%", padding: "1rem", fontSize: "0.78rem", letterSpacing: "0.2em", justifyContent: "center" }}
+                    >
+                        {loading ? (
+                            <>
+                                <span style={{ animation: "oracle-pulse 1s ease-in-out infinite" }}>◆</span>
+                                &nbsp;Convening the Oracle…
+                            </>
+                        ) : (
+                            "Commence the Trial →"
+                        )}
+                    </button>
                 </div>
 
-                {error && <p className="mb-4 text-xs text-red-400 font-mono">{error}</p>}
-
-                <button
-                    onClick={handleCreate}
-                    disabled={loading}
-                    className="w-full rounded-[6px] bg-[#f59e0b] text-black font-bold py-3.5 hover:bg-[#fbbf24] transition-all duration-200 disabled:opacity-40 text-sm tracking-wide shadow-[0_0_20px_rgba(245,158,11,0.2)] hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
-                >
-                    {loading ? "CREATING..." : "CREATE DEBATE →"}
-                </button>
             </main>
         </div>
     );
