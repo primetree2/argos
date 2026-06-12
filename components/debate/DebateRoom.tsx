@@ -40,9 +40,11 @@ interface Debate {
 export function DebateRoom({
     debate: initialDebate,
     currentUserId,
+    username = null,
 }: {
     debate: Debate;
     currentUserId: string;
+    username?: string | null;
 }) {
     const [debate, setDebate] = useState(initialDebate);
     const [argument, setArgument] = useState("");
@@ -50,8 +52,14 @@ export function DebateRoom({
     const [timeLeft, setTimeLeft] = useState(600);
     const [error, setError] = useState("");
     const [copied, setCopied] = useState(false);
+    const [shareUrl, setShareUrl] = useState("");
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const supabase = createClient();
+
+    // Share URL read after mount — avoids SSR/client hydration mismatch
+    useEffect(() => {
+        setShareUrl(window.location.href);
+    }, []);
 
     const isPlayerA = debate.player_a_id === currentUserId;
     const myArguments = debate.arguments.filter((a) => a.user_id === currentUserId);
@@ -67,7 +75,7 @@ export function DebateRoom({
     const wordCount = argument.trim() ? argument.trim().split(/\s+/).length : 0;
     const totalPossible = debate.total_rounds * 80;
 
-    // ── Realtime (unchanged) ──
+    // ── Realtime ──
     useEffect(() => {
         const channel = supabase
             .channel(`debate:${debate.id}`)
@@ -85,7 +93,7 @@ export function DebateRoom({
         return () => { supabase.removeChannel(channel); };
     }, [debate.id]);
 
-    // ── Timer (unchanged) ──
+    // ── Timer ── (reacts to turn, round AND status changes)
     useEffect(() => {
         if (!isMyTurn || debate.status !== "active") return;
         setTimeLeft(600);
@@ -93,7 +101,7 @@ export function DebateRoom({
             setTimeLeft((t) => { if (t <= 1) { clearInterval(timerRef.current!); return 0; } return t - 1; });
         }, 1000);
         return () => clearInterval(timerRef.current!);
-    }, [isMyTurn, debate.current_round]);
+    }, [isMyTurn, debate.current_round, debate.status]);
 
     const formatTime = (s: number) => {
         const m = Math.floor(s / 60);
@@ -101,7 +109,7 @@ export function DebateRoom({
         return `${m}:${sec.toString().padStart(2, "0")}`;
     };
 
-    // ── handleJoin (unchanged) ──
+    // ── handleJoin ──
     const handleJoin = async () => {
         const res = await fetch(`/api/debates/${debate.id}`, {
             method: "PATCH",
@@ -112,9 +120,9 @@ export function DebateRoom({
         if (data.debate) setDebate((prev) => ({ ...prev, ...data.debate }));
     };
 
-    // ── handleSubmit (unchanged) ──
+    // ── handleSubmit ──
     const handleSubmit = async () => {
-        if (!argument.trim() || argument.trim().split(" ").length < 10) { setError("Argument must be at least 10 words."); return; }
+        if (!argument.trim() || argument.trim().split(/\s+/).length < 10) { setError("Argument must be at least 10 words."); return; }
         setSubmitting(true); setError("");
         const { data: newArg, error: argError } = await supabase
             .from("arguments")
@@ -146,7 +154,7 @@ export function DebateRoom({
 
             {/* ── Navbar (hideJoinBar on debate page) ── */}
             <CircuitBackground intensity={0.45} />
-            <Navbar hideJoinBar />
+            <Navbar username={username} hideJoinBar />
 
             {/* ── Debate header ── */}
             <div style={{ borderBottom: "1px solid var(--border-default)", background: "var(--bg-surface)" }}>
@@ -159,9 +167,29 @@ export function DebateRoom({
                             {debate.topics.title}
                         </h1>
                     </div>
-                    <span className={mySide === "FOR" ? "badge-for" : "badge-against"}>
-                        {mySide}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", flexShrink: 0 }}>
+                        {/* Round progress dots */}
+                        <div style={{ display: "flex", gap: "0.3rem" }} aria-label={`Round ${debate.current_round} of ${debate.total_rounds}`}>
+                            {Array.from({ length: debate.total_rounds }, (_, i) => (
+                                <span
+                                    key={i}
+                                    style={{
+                                        width: "6px",
+                                        height: "6px",
+                                        borderRadius: "50%",
+                                        background: i < debate.current_round ? "var(--gold)" : "var(--bg-elevated)",
+                                        border: "1px solid var(--gold-border)",
+                                        boxShadow: i < debate.current_round ? "0 0 6px rgba(201,168,76,0.5)" : "none",
+                                        transition: "background 300ms ease, box-shadow 300ms ease",
+                                        display: "inline-block",
+                                    }}
+                                />
+                            ))}
+                        </div>
+                        <span className={mySide === "FOR" ? "badge-for" : "badge-against"}>
+                            {mySide}
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -216,9 +244,9 @@ export function DebateRoom({
                                 </p>
                                 <div style={{ display: "flex", gap: "0.5rem" }}>
                                     <code style={{ flex: 1, fontFamily: "var(--font-share-tech), monospace", fontSize: "0.72rem", background: "var(--bg-elevated)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)", padding: "0.65rem 0.85rem", color: "var(--text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "0.03em" }}>
-                                        {typeof window !== "undefined" ? window.location.href : ""}
+                                        {shareUrl}
                                     </code>
-                                    <button onClick={() => handleCopy(typeof window !== "undefined" ? window.location.href : "")} style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: 600, color: copied ? "var(--bg-void)" : "var(--text-gold)", background: copied ? "var(--gold)" : "var(--gold-glow)", border: "1px solid var(--gold-border)", borderRadius: "var(--radius-md)", padding: "0.65rem 1rem", cursor: "pointer", flexShrink: 0, transition: "all 200ms ease", textTransform: "uppercase" }}>
+                                    <button onClick={() => handleCopy(shareUrl)} style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: 600, color: copied ? "var(--bg-void)" : "var(--text-gold)", background: copied ? "var(--gold)" : "var(--gold-glow)", border: "1px solid var(--gold-border)", borderRadius: "var(--radius-md)", padding: "0.65rem 1rem", cursor: "pointer", flexShrink: 0, transition: "all 200ms ease", textTransform: "uppercase" }}>
                                         {copied ? "✓ Copied" : "Copy"}
                                     </button>
                                 </div>
@@ -323,8 +351,11 @@ export function DebateRoom({
                                         Your Argument · Round {debate.current_round}
                                     </p>
                                     <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.7rem", color: "var(--text-tertiary)", letterSpacing: "0.06em" }}>
-                                            {wordCount}w
+                                        <span
+                                            title="Minimum 10 words"
+                                            style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.7rem", color: wordCount >= 10 || wordCount === 0 ? "var(--text-tertiary)" : "var(--red-neon)", letterSpacing: "0.06em", transition: "color 200ms ease" }}
+                                        >
+                                            {wordCount}w{wordCount > 0 && wordCount < 10 ? " / 10 min" : ""}
                                         </span>
                                         <span
                                             style={{
@@ -450,7 +481,7 @@ export function DebateRoom({
 
                                     <div className="result-actions" style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
                                         <button
-                                            onClick={() => handleCopy(typeof window !== "undefined" ? window.location.href : "")}
+                                            onClick={() => handleCopy(shareUrl)}
                                             className="btn-ghost"
                                         >
                                             {copied ? "✓ Copied" : "Share Result"}

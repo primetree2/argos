@@ -174,6 +174,16 @@ export function ScoreBreakdown({ argument: arg }: { argument: Argument }) {
                 </div>
             )}
 
+            {/* Penalty readout */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 0.1rem" }}>
+                <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.55rem", letterSpacing: "0.18em", color: "var(--red-neon)", textTransform: "uppercase" }}>
+                    Fallacy Penalty
+                </span>
+                <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.72rem", color: "var(--red-neon)", letterSpacing: "0.04em", textShadow: "0 0 8px rgba(255,68,68,0.4)" }}>
+                    {arg.fallacy_penalty}
+                </span>
+            </div>
+
             {/* Oracle feedback */}
             {arg.ai_feedback && (
                 <div

@@ -22,17 +22,34 @@ export default function NewDebatePage() {
     const [error, setError] = useState("");
 
     const handleCreate = async () => {
-        if (!topic.trim()) { setError("Enter a topic to continue."); return; }
+        if (!topic.trim()) {
+            setError("Enter a topic to continue.");
+            return;
+        }
+
         setLoading(true);
         setError("");
-        const res = await fetch("/api/debates", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ topic, mode, totalRounds: rounds }),
-        });
-        const data = await res.json();
-        if (!res.ok) { setError(data.error ?? "Something went wrong."); setLoading(false); return; }
-        router.push(`/debate/${data.debate.id}`);
+
+        try {
+            const res = await fetch("/api/debates", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ topic, mode, totalRounds: rounds }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                setError(data.error ?? "Something went wrong.");
+                setLoading(false);
+                return;
+            }
+
+            router.push(`/debate/${data.debate.id}`);
+        } catch {
+            setError("The Oracle is unreachable. Check your connection and try again.");
+            setLoading(false);
+        }
     };
 
     const wordCount = topic.trim() ? topic.trim().split(/\s+/).length : 0;

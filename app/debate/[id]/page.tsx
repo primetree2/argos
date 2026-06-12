@@ -34,10 +34,11 @@ export default async function DebatePage({
 
     if (!user) redirect("/login");
 
-    const { data: debate, error } = await supabase
-        .from("debates")
-        .select(
-            `
+    const [{ data: debate, error }, { data: profile }] = await Promise.all([
+        supabase
+            .from("debates")
+            .select(
+                `
       *,
       topics (title, category),
       arguments (
@@ -47,11 +48,13 @@ export default async function DebatePage({
         ai_feedback, scoring_status
       )
     `
-        )
-        .eq("id", id)
-        .single();
+            )
+            .eq("id", id)
+            .single(),
+        supabase.from("users").select("username").eq("id", user.id).single(),
+    ]);
 
     if (error || !debate) redirect("/dashboard");
 
-    return <DebateRoom debate={debate} currentUserId={user.id} />;
+    return <DebateRoom debate={debate} currentUserId={user.id} username={profile?.username ?? null} />;
 }
