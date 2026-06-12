@@ -466,13 +466,13 @@ Breakpoints handled via CSS classes in globals.css:
 - [x] Deployed at argos-indol.vercel.app
 
 ### Next — V2
-- [ ] Leaderboard page (global Elo rankings)
-- [ ] Debate history on dashboard (past debates list)
-- [ ] Profile page (public stats, Elo chart, recent debates)
+- [x] Leaderboard page (global Elo rankings)
+- [x] Debate history on dashboard (past debates list)
+- [x] Profile page (public stats, Elo chart, recent debates)
 - [ ] Challenge system (invite specific opponent, uses existing challenges table)
 - [ ] Debate vs AI (Gemini plays opposing side)
-- [ ] Elo history sparkline chart (elo_history table already exists)
-- [ ] loading.tsx spinners on each route
+- [x] Elo history sparkline chart (elo_history table already exists)
+- [x] loading.tsx spinners on each route
 - [ ] Email "your turn" notifications via Resend
 
 ### V3 — Growth & monetisation
@@ -516,7 +516,7 @@ Best tool per task:
 
 ## 15. Current Status
 
-Current phase: Phase 6 — Live, deployed, V2 features next
+Current phase: Phase 7 — V2 features in progress (leaderboard, debate history, profile shipped)
 
 ### Phase checklist
 - [x] Phase 0: Setup (GitHub, Vercel, Supabase, Gemini API key, .env.local)
@@ -557,10 +557,19 @@ Complete frontend redesign across all pages. Files changed:
 - Mobile responsive pass: CSS breakpoint classes wired to JSX elements
 
 ### Next immediate task
-Phase 7 — V2 features, suggested order:
-1. Leaderboard page (`app/leaderboard/page.tsx`) — query users table ordered by elo_rating
-2. Debate history section on dashboard — query debates table for current user
-3. Profile page (`app/profile/[username]/page.tsx`) — public stats + Elo sparkline
+Phase 7 — remaining V2 features, suggested order:
+1. Challenge system — invite a specific opponent (uses existing challenges table); wire up the "Browse Challenges" dashboard card
+2. Debate vs AI — Gemini plays the opposing side (`lib/ai/opponent.ts`); wire up the "Debate vs AI" dashboard card
+3. loading.tsx spinners on each route + email "your turn" notifications via Resend
+
+Shipped this phase so far:
+- `app/leaderboard/page.tsx` — global Elo rankings (top 50), podium colors, viewer highlight, public
+- `app/profile/[username]/page.tsx` — public stats, Elo sparkline SVG from elo_history, recent debates
+- Dashboard "Chronicle" — recent debate history rows with result badges (`lib/debates.ts` shared helper)
+- Leaderboard action card on dashboard activated (was "Soon")
+
+Note: leaderboard and profile pages are public — verify RLS on `users`, `debates`, `topics`,
+and `elo_history` allows anonymous SELECT, or they will render empty for logged-out visitors.
 
 Document version: 3.0
 AI provider: Google Gemini free tier

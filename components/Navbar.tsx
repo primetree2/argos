@@ -152,6 +152,24 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                         gap: "0.75rem",
                     }}
                 >
+                    {/* Leaderboard link */}
+                    <Link
+                        href="/leaderboard"
+                        style={{
+                            fontFamily: "var(--font-cinzel), serif",
+                            fontSize: "0.65rem",
+                            letterSpacing: "0.14em",
+                            color: "var(--text-secondary)",
+                            textDecoration: "none",
+                            padding: "0.45rem 0.5rem",
+                            transition: "color 200ms ease",
+                        }}
+                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
+                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
+                    >
+                        RANKS
+                    </Link>
+
                     {/* Join debate — desktop inline icon-button */}
                     {!hideJoinBar && (
                         <button
@@ -191,7 +209,6 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                             </svg>
-                            <span style={{ display: "none" }} className="sm:inline">JOIN</span>
                             <span>JOIN</span>
                         </button>
                     )}

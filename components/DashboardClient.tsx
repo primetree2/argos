@@ -4,6 +4,21 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
+import type { DebateHistoryEntry } from "@/lib/debates";
+
+const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+});
+
+const RESULT_STYLES: Record<DebateHistoryEntry["result"], { label: string; color: string }> = {
+    won: { label: "Won", color: "var(--gold)" },
+    lost: { label: "Lost", color: "var(--text-tertiary)" },
+    draw: { label: "Draw", color: "var(--text-secondary)" },
+    active: { label: "Active", color: "var(--teal)" },
+};
 
 /* ── Count-up hook ── */
 function useCountUp(target: number, duration = 1200) {
@@ -30,9 +45,10 @@ interface DashboardClientProps {
     winRate: number;
     totalDebates: number;
     username: string;
+    history: DebateHistoryEntry[];
 }
 
-export function DashboardClient({ elo, won, lost, winRate, totalDebates, username }: DashboardClientProps) {
+export function DashboardClient({ elo, won, lost, winRate, totalDebates, username, history }: DashboardClientProps) {
     const eloDisplay = useCountUp(elo, 1400);
     const wonDisplay = useCountUp(won, 900);
     const lostDisplay = useCountUp(lost, 900);
@@ -129,8 +145,61 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
 
                     <ComingSoonCard title="Browse Challenges" desc="Accept open challenges from other debaters." iconPath="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8" />
                     <ComingSoonCard title="Debate vs AI" desc="Test your arguments against the Oracle itself." iconPath="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2zM4 20c0-4 3.6-7 8-7s8 3 8 7" />
-                    <ComingSoonCard title="Leaderboard" desc="See where you stand among all orators." iconPath="M18 20V10M12 20V4M6 20v-6" />
+
+                    {/* Leaderboard — now live */}
+                    <Link href="/leaderboard" style={{ textDecoration: "none" }}>
+                        <div className="glass-card" style={{ padding: "1.75rem 1.5rem", borderTop: "1px solid var(--teal)", cursor: "pointer", height: "100%" }}>
+                            <ActionIcon color="var(--teal)">
+                                <path d="M18 20V10M12 20V4M6 20v-6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </ActionIcon>
+                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.9rem", fontWeight: 600, letterSpacing: "0.06em", color: "var(--text-primary)", marginBottom: "0.4rem" }}>
+                                Leaderboard
+                            </p>
+                            <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.88rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                See where you stand among all orators.
+                            </p>
+                        </div>
+                    </Link>
                 </div>
+
+                {/* Chronicle divider */}
+                <div className="reveal-5" style={{ display: "flex", alignItems: "center", gap: "1rem", margin: "2.75rem 0 1.25rem" }}>
+                    <div className="gold-rule-subtle" style={{ flex: 1 }} />
+                    <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.60rem", letterSpacing: "0.28em", color: "var(--text-gold)", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                        Chronicle
+                    </span>
+                    <div className="gold-rule-subtle" style={{ flex: 1 }} />
+                </div>
+
+                {/* Debate history */}
+                {history.length === 0 ? (
+                    <p className="reveal-6" style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", color: "var(--text-tertiary)", fontSize: "0.95rem", textAlign: "center", padding: "1.5rem 0" }}>
+                        No debates recorded yet. Your chronicle begins with your first trial.
+                    </p>
+                ) : (
+                    <div className="reveal-6" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {history.map((h) => (
+                            <Link key={h.id} href={`/debate/${h.id}`} style={{ textDecoration: "none" }}>
+                                <div className="history-row" style={{ display: "flex", alignItems: "center", gap: "0.85rem", padding: "0.8rem 1.1rem", background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)" }}>
+                                    <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.55rem", fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", padding: "0.2rem 0.55rem", borderRadius: "2px", flexShrink: 0, color: RESULT_STYLES[h.result].color, border: `1px solid ${RESULT_STYLES[h.result].color}`, opacity: 0.9 }}>
+                                        {RESULT_STYLES[h.result].label}
+                                    </span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                            {h.topic}
+                                        </p>
+                                        <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.68rem", color: "var(--text-tertiary)", letterSpacing: "0.06em" }}>
+                                            vs {h.opponent ?? "—"}
+                                        </p>
+                                    </div>
+                                    <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.68rem", color: "var(--text-tertiary)", letterSpacing: "0.06em", flexShrink: 0 }}>
+                                        {h.createdAt ? DATE_FMT.format(new Date(h.createdAt)) : ""}
+                                    </span>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                )}
             </main>
 
             {/* Breathing glow CSS */}
@@ -150,6 +219,14 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
         [data-theme="light"] .new-debate-card {
           animation: none;
           box-shadow: var(--shadow-card), 0 0 18px rgba(122,82,16,0.18);
+        }
+        .history-row {
+          transition: border-color 200ms ease, background 200ms ease, transform 200ms ease;
+        }
+        .history-row:hover {
+          border-color: var(--gold-border-hover);
+          background: var(--gold-glow);
+          transform: translateX(4px);
         }
       `}</style>
         </div>
