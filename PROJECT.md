@@ -174,59 +174,37 @@ export async function scoreArgument(
 ## 6. Tech Stack — Free-First, Upgrade-Ready
 
 ### Frontend
-- Framework: Next.js 14 (App Router) — free
-- Styling: Tailwind CSS — free
+- Framework: Next.js 15 (App Router) — free
+- Styling: Tailwind CSS v4 — free
 - Components: shadcn/ui — free, open source
-- State: Zustand — free
+- Fonts: Cinzel, Cinzel Decorative, Crimson Pro, Share Tech Mono (Google Fonts via next/font)
 
 ### Backend
 - API layer: Next.js API Routes (serverless functions on Vercel)
 - AI judge: Google Gemini via @google/generative-ai — free tier
-- Async scoring: Supabase Edge Functions — free (500k invocations/month)
 - Rate limiting: Simple DB counter to start; Upstash Redis free tier when needed
 
 ### Database & Auth
 - Database: Supabase free tier (500MB, 50k rows)
 - ORM: Drizzle ORM
-- Auth: Supabase Auth (Google OAuth + email/password)
+- Auth: Supabase Auth (Google OAuth)
 - Real-time: Supabase Realtime (free tier: 200 concurrent connections)
+
+### Observability
+- Error monitoring: Sentry
+- Analytics: Posthog
 
 ### Infrastructure cost table
 
 | Service       | Free allowance                        | Upgrade trigger                         |
 |---------------|---------------------------------------|-----------------------------------------|
 | Vercel        | Unlimited deploys, 100GB bandwidth    | Custom domain needs Pro ($20/mo)        |
-| Supabase      | 500MB DB, 50k rows, 2GB transfer      | DB > 500MB, Pro ($25/mo), ~month 2+    |
+| Supabase      | 500MB DB, 50k rows, 2GB transfer      | DB > 500MB, Pro ($25/mo)               |
 | Gemini API    | ~1,000 req/day Flash, no credit card  | Consistent limit hits -> paid or Claude |
 | Upstash Redis | 10k req/day                           | $0.20/100k req when needed              |
 | Resend        | 3,000 emails/month                    | Paid ($20/mo) for higher volume         |
 | Sentry        | 5,000 errors/month                    | Free for a long time                    |
 | Posthog       | 1M events/month                       | Free for a long time                    |
-
-### Bootstrap commands
-```bash
-npx create-next-app@latest argos --typescript --tailwind --app
-cd argos
-npm install @supabase/supabase-js drizzle-orm @google/generative-ai resend
-npm install -D drizzle-kit
-```
-
-### .env.local (NEVER commit — add to .gitignore immediately)
-```bash
-# AI — current provider (swap this block when switching to Anthropic)
-GEMINI_API_KEY=your_key_from_aistudio.google.com
-
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=your_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-# Email
-RESEND_API_KEY=your_key_from_resend.com
-
-# App
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
 
 ---
 
@@ -301,33 +279,6 @@ CREATE TABLE challenges (
 );
 ```
 
-### Row Level Security (enable on ALL tables)
-
-```sql
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "users_read_all" ON users FOR SELECT USING (true);
-CREATE POLICY "users_self_update" ON users FOR UPDATE USING (auth.uid() = id);
-
-ALTER TABLE debates ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "debates_participants_read" ON debates FOR SELECT
-  USING (auth.uid() = player_a_id OR auth.uid() = player_b_id);
-CREATE POLICY "debates_insert" ON debates FOR INSERT WITH CHECK (auth.uid() = player_a_id);
-
-ALTER TABLE arguments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "arguments_participants_read" ON arguments FOR SELECT
-  USING (debate_id IN (
-    SELECT id FROM debates WHERE player_a_id = auth.uid() OR player_b_id = auth.uid()
-  ));
-CREATE POLICY "arguments_insert" ON arguments FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-ALTER TABLE elo_history ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "elo_read_all" ON elo_history FOR SELECT USING (true);
-
-ALTER TABLE challenges ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "challenges_read_all" ON challenges FOR SELECT USING (true);
-CREATE POLICY "challenges_insert" ON challenges FOR INSERT WITH CHECK (auth.uid() = creator_id);
-```
-
 ---
 
 ## 8. Repo Structure
@@ -336,72 +287,51 @@ CREATE POLICY "challenges_insert" ON challenges FOR INSERT WITH CHECK (auth.uid(
 argos/
 ├── app/
 │   ├── api/
-│   │   ├── score/route.ts           # POST: save argument, invoke Edge Function
+│   │   ├── score/route.ts           # POST: save argument, invoke Gemini scoring
 │   │   ├── debates/route.ts         # GET (list), POST (create)
 │   │   ├── debates/[id]/route.ts    # GET (state), PATCH (join, update turn)
 │   │   └── og/route.tsx             # GET: generate shareable PNG result card
-│   ├── (auth)/
-│   │   ├── login/page.tsx
-│   │   └── signup/page.tsx
-│   ├── debate/[id]/page.tsx         # Main debate room with Realtime
-│   ├── profile/[id]/page.tsx        # Player profile, Elo chart, past debates
-│   ├── challenges/page.tsx          # Public challenge board
-│   ├── leaderboard/page.tsx         # Global Elo rankings
+│   ├── auth/
+│   │   ├── callback/route.ts        # Supabase OAuth callback
+│   │   ├── error/page.tsx           # Auth error display
+│   │   └── signout/route.ts         # Sign-out handler
+│   ├── dashboard/page.tsx           # Player stats: Elo, W/L, action cards
+│   ├── debate/
+│   │   ├── new/page.tsx             # Debate setup: topic, mode, rounds
+│   │   └── [id]/page.tsx            # Debate room hydration
+│   ├── login/page.tsx               # Google OAuth sign-in
+│   ├── globals.css                  # Oracle Terminal design system
+│   ├── layout.tsx                   # Root layout: fonts, ThemeProvider
 │   └── page.tsx                     # Landing page
+├── components/
+│   ├── auth/
+│   │   └── LoginButton.tsx          # Google OAuth trigger button
+│   ├── debate/
+│   │   ├── DebateRoom.tsx           # Main debate room: Realtime, timer, state machine
+│   │   └── ScoreBreakdown.tsx       # Animated score bars + fallacy cards
+│   ├── ui/
+│   │   └── ThemeToggle.tsx          # Fixed dark/light theme toggle button
+│   ├── CircuitBackground.tsx        # Animated SVG circuit traces background
+│   ├── DashboardClient.tsx          # Client component: count-up stats, liquid win rate
+│   ├── Navbar.tsx                   # Global navbar with JOIN debate bar
+│   ├── PosthogProvider.tsx          # Analytics wrapper
+│   └── ThemeProvider.tsx            # Theme context: dark/light, localStorage persist
 ├── lib/
 │   ├── ai/
-│   │   ├── judge.ts                 # ONLY file that imports Gemini/Anthropic SDK
-│   │   ├── opponent.ts              # AI opponent for vs_ai mode
+│   │   ├── judge.ts                 # ONLY file that imports Gemini SDK
 │   │   └── prompts.ts               # Prompt template functions
 │   ├── db/
-│   │   ├── schema.ts                # Drizzle schema
-│   │   └── queries.ts               # Typed query helpers
+│   │   └── schema.ts                # Drizzle schema
 │   ├── elo.ts                       # Pure calculateElo() function
 │   └── supabase/
 │       ├── client.ts                # Browser Supabase client
 │       └── server.ts                # Server Supabase client
-├── components/
-│   ├── debate/
-│   │   ├── ArgumentInput.tsx        # Textarea + word count + timer + submit
-│   │   ├── ScoreBreakdown.tsx       # Per-dimension score bars
-│   │   └── FallacyList.tsx          # Detected fallacies with explanations
-│   ├── profile/
-│   │   └── EloChart.tsx             # Elo over time (recharts)
-│   └── ui/                          # shadcn/ui components
-├── supabase/
-│   ├── functions/
-│   │   └── score-argument/          # Edge Function: calls Gemini, writes score
-│   └── migrations/                  # SQL migration files
-├── .env.local                       # NEVER COMMIT
-├── .gitignore
 └── PROJECT.md                       # This file
 ```
 
 ---
 
-## 9. Async Scoring Architecture (Supabase Edge Functions)
-
-```
-User submits argument
-  -> POST /api/score
-  -> INSERT argument row (scoring_status: 'pending')
-  -> supabase.functions.invoke('score-argument', { body: { argument_id } })
-  -> Return { status: "scoring" } immediately — do not await the function
-  -> Client shows "AI is scoring..." UI state
-
-Edge Function fires (supabase/functions/score-argument/index.ts)
-  -> SELECT argument + debate context from DB
-  -> Call Gemini API with judge prompt
-  -> Parse JSON (strip markdown fences if present)
-  -> UPDATE arguments SET score_*, fallacies_found, ai_feedback, scoring_status = 'done'
-  -> Supabase Realtime broadcasts row change to all subscribed clients automatically
-  -> Client subscription fires -> renders full score breakdown
-  -> On Gemini 429: wait 60s, retry once, set scoring_status = 'failed' if still failing
-```
-
----
-
-## 10. Elo Implementation
+## 9. Elo Implementation
 
 ```typescript
 // /lib/elo.ts
@@ -422,206 +352,217 @@ export function calculateElo(
 
 ---
 
-## 11. Shareable Result Card
+## 10. Shareable Result Card
 
-Generated at /app/api/og/route.tsx using Next.js built-in OG Image API (no extra libraries).
+Generated at /app/api/og/route.tsx using Next.js built-in OG Image API.
 Returns a PNG used as the Open Graph preview when debate result URLs are shared on social media.
-
 Card shows: app name, topic, both usernames, final scores, winner + Elo change, top fallacy caught.
 This is the primary viral growth mechanic.
 
 ---
 
+## 11. UI Design System — Oracle Terminal
+
+Argos uses a custom design system called **Oracle Terminal**:
+"An ancient debate institution that gained sentience. Gold leaf meets circuit boards."
+
+### Aesthetic
+Dark mode default: near-black void (`#07080a`) with burnished gold (`#c9a84c`) as primary accent
+and neon teal (`#00ffe0`) as the tech accent. Light mode uses aged parchment (`#f0ead8`) tones.
+Atmospheric background: SVG noise texture + radial gold/teal gradients + animated circuit traces.
+
+### Font Stack
+| Variable             | Font                  | Usage                              |
+|----------------------|-----------------------|------------------------------------|
+| `--font-cinzel`      | Cinzel                | Headings, labels, UI chrome        |
+| `--font-cinzel-deco` | Cinzel Decorative     | ARGOS wordmark, hero title         |
+| `--font-crimson`     | Crimson Pro           | Body text, argument content        |
+| `--font-share-tech`  | Share Tech Mono       | Scores, data readouts, monospace   |
+
+### Key CSS classes (globals.css)
+- `.glass-card` — liquid glass effect: `backdrop-filter: blur(16px)`, gold border, shadow
+- `.btn-oracle` — primary CTA: gold fill, Cinzel label, hover lift + glow
+- `.btn-ghost` — secondary: transparent, gold border on hover
+- `.oracle-input` — form fields: dark glass, gold focus ring glow
+- `.gold-rule` / `.gold-rule-subtle` — decorative horizontal dividers
+- `.label-oracle` — small caps Cinzel labels, gold, wide letter-spacing
+- `.scanlines` — subtle CRT scanline overlay for instrument panels
+- `.text-shimmer` — animated gold shimmer sweep (used on hero ARGOS title)
+- `.reveal-1` through `.reveal-6` — staggered page-load fade-up animations
+- `.cursor-blink` — blinking pipe cursor appended via `::after`
+- `.badge-for` / `.badge-against` — gold/teal side indicator pills
+
+### Theme system
+Two themes controlled via `data-theme` attribute on `<html>`:
+- Dark (default): no attribute
+- Light: `data-theme="light"`
+
+Toggled by `ThemeProvider` + `ThemeToggle` components. Persisted to `localStorage`.
+Anti-flash inline script in layout.tsx reads localStorage before first paint.
+
+### CircuitBackground component
+Fixed SVG behind all page content. Contains:
+- Gold traces (~80%): right-angle clusters at corners, vertical spines on each side
+- Teal traces (~20%): horizontal band top-centre, mid-side branches, bottom accent
+- Intersection node dots in matching colors
+- 5 animated pulse dots (3 gold, 2 teal) via SVG `animateMotion`
+- Radial vignette overlay darkening edges, spotlighting centre content
+- `intensity` prop: `1.0` (landing/login/dashboard), `0.7` (new debate), `0.45` (debate room)
+- Light mode: SVG at 35% opacity, warm amber vignette
+
+### Dashboard special features
+- `DashboardClient.tsx` — client component for animated stats
+- Count-up animation on all 4 stats (Elo, Won, Lost, Win Rate) on page load
+- Win Rate panel: full-card teal liquid fill rising to win%, wave animation on surface
+  - Text contrast adapts: teal on dark background → near-black when liquid covers text
+- New Debate card: `breathe-gold` CSS animation — slow box-shadow pulse draws the eye
+- Breathing glow pauses on hover, replaced by full gold lift
+
+### Pages summary
+| Page              | Key design features                                                  |
+|-------------------|----------------------------------------------------------------------|
+| Landing           | Staggered 6-beat reveal, gold shimmer ARGOS title, circuit grid bg   |
+| Login             | Oracle Seal SVG emblem, glass card, Latin inscription footer         |
+| Dashboard         | Instrument stat panels, liquid win rate, breathing New Debate card   |
+| New Debate        | oracle-input textarea, word counter, mode cards (gold/teal), slider  |
+| Debate Room       | Color-coded argument cards (gold=you, teal=opponent), score tribune  |
+| Score Breakdown   | Animated 3px bars, fallacy red cards, "Oracle Speaks" feedback panel |
+| Auth Error        | Red-triangle icon, glass card, Cinzel heading                        |
+
+### Navbar
+- Sticky, glass blur, Oracle triangle wordmark
+- JOIN button expands a slide-down bar for pasting debate links or IDs
+- Accepts full URL or bare debate ID
+- `hideJoinBar` prop for debate room, `hideAuth` for landing/login
+
+### Mobile responsiveness
+Breakpoints handled via CSS classes in globals.css:
+- `≤640px`: stat grid → 2 columns, Elo spans full width
+- `≤500px`: action cards → 1 col, panels → 1 col, mode selector → 1 col
+- `≤580px`: score tribune stacks vertically
+- `≤480px`: result buttons stack full-width
+- `≤520px`: join bar label wraps to own line
+
+---
+
 ## 12. Feature Roadmap
 
-### MVP — weeks 1-3 (build ONLY this first)
-- [ ] User auth (Google OAuth + email via Supabase Auth)
-- [ ] Create debate + join via invite link
-- [ ] Turn-based argument submission with countdown timer
-- [ ] AI scoring per turn with per-dimension breakdown (Gemini Flash)
-- [ ] Basic Elo rating
-- [ ] Shareable result card (Next.js OG image)
-- [ ] vs AI mode (Gemini plays the opposing side)
+### Complete ✓
+- [x] User auth (Google OAuth via Supabase Auth)
+- [x] Create debate + join via invite link
+- [x] Turn-based argument submission with countdown timer
+- [x] AI scoring per turn with per-dimension breakdown (Gemini Flash)
+- [x] Fallacy detection (10 types, named + quoted + explained)
+- [x] Elo rating (K=32/<30 debates, K=16/30+)
+- [x] Shareable result card (Next.js OG image API)
+- [x] Realtime updates (Supabase Realtime on debates + arguments tables)
+- [x] Full UI renovation — Oracle Terminal design system
+- [x] Dark/light theme with persistence
+- [x] Animated circuit background
+- [x] Liquid fill win rate, count-up stats, breathing glow CTA
+- [x] Mobile responsive layout
+- [x] Sentry error monitoring
+- [x] Posthog analytics
+- [x] Deployed at argos-indol.vercel.app
 
-### V2 — weeks 4-8 (after real users give feedback)
+### Next — V2
+- [ ] Leaderboard page (global Elo rankings)
+- [ ] Debate history on dashboard (past debates list)
+- [ ] Profile page (public stats, Elo chart, recent debates)
+- [ ] Challenge system (invite specific opponent, uses existing challenges table)
+- [ ] Debate vs AI (Gemini plays opposing side)
+- [ ] Elo history sparkline chart (elo_history table already exists)
+- [ ] loading.tsx spinners on each route
+- [ ] Email "your turn" notifications via Resend
+
+### V3 — Growth & monetisation
 - [ ] Daily Topic with global leaderboard
-- [ ] Public challenge board
-- [ ] Debate history + personal stats page
-- [ ] Fallacy library (educational page + good for SEO)
-- [ ] Email "it's your turn" notifications via Resend
-- [ ] Spectator mode
-
-### V3 — growth & monetisation
 - [ ] Clubs / debate teams
 - [ ] Tournaments with brackets
 - [ ] Pro tier via Stripe ($8-12/month)
-- [ ] Switch AI to Claude Haiku for higher quality (edit only /lib/ai/judge.ts)
+- [ ] Switch AI to Claude Haiku (edit only /lib/ai/judge.ts)
 
 ---
 
-## 13. Cost Projection
+## 13. Security Checklist
 
-At launch: $0/month. All free tiers.
-
-Gemini free headroom: ~1,000 Flash req/day = ~83 full debates/day = fine for early launch.
-
-| Upgrade trigger                         | Service        | Cost      |
-|-----------------------------------------|----------------|-----------|
-| Gemini free limit consistently hit      | Gemini paid or Claude Haiku | ~$5-15/mo |
-| DB exceeds 500MB                        | Supabase Pro   | $25/mo    |
-| Custom domain needed                    | Vercel Pro     | $20/mo    |
-| Email volume > 3k/month                 | Resend paid    | $20/mo    |
-
-Break-even: 3-4 Pro subscribers at $8/month covers everything at 500 DAU.
-
----
-
-## 14. Security Checklist (complete before public launch)
-
-- [ ] .env.local confirmed in .gitignore before first commit
-- [ ] GEMINI_API_KEY only in server-side files — never NEXT_PUBLIC_
-- [ ] SUPABASE_SERVICE_ROLE_KEY only in server-side API routes — never client-side
-- [ ] RLS enabled and tested on ALL Supabase tables
-- [ ] Rate limiting on /api/score: max 1 scoring call per argument_id
+- [x] .env.local confirmed in .gitignore
+- [x] GEMINI_API_KEY only in server-side files
+- [x] SUPABASE_SERVICE_ROLE_KEY only in server-side API routes
+- [x] RLS enabled and tested on ALL Supabase tables
+- [x] Rate limiting on /api/score
+- [x] Sentry installed
+- [x] Posthog installed
+- [x] Full debate flow tested on Vercel
 - [ ] Basic profanity/abuse filter before argument reaches Gemini
-- [ ] Gemini 429 handling in Edge Function with retry + graceful failure
-- [ ] Sentry installed before public launch
-- [ ] Posthog installed for analytics
-- [ ] Full debate flow tested on Vercel preview URL before merging to main
+- [ ] Gemini 429 handling with retry + graceful failure (partially done)
 
 ---
 
-## 15. Launch Strategy
-
-Week 3 — Private alpha: 10-20 friends only. Watch them use it. Fix confusion before going public.
-
-Week 4 — Public beta:
-- Post on r/changemyview, r/slatestarcodex, r/philosophy, r/SideProject
-- Hacker News Show HN: "I built chess.com for debate with an AI fallacy detector"
-- Twitter/X: screen recording of AI catching a fallacy mid-debate
-
-Week 5 — Community seeding:
-- DM 5-10 university debate clubs, offer free access
-- Post an interesting scored debate result as a full thread
-
-Week 6 — Retention:
-- Launch Daily Topic
-- Add email "your turn" notifications
-- Check Posthog funnel, fix top drop-off point
-
----
-
-## 16. LLM Development Workflow
+## 14. LLM Development Workflow
 
 Starting any new chat:
 1. Open this file
 2. Paste ENTIRE contents as first message
-3. Add: "I want to work on: [task from section 17]"
-
-Ending a session:
-Ask: "Summarise what we built today and the exact next task. Format it for my PROJECT.md section 17."
+3. Add: "I want to work on: [specific feature]"
 
 Best tool per task:
 - Architecture + hard debugging: Claude (claude.ai)
 - Writing/editing files in codebase: Claude Code CLI or Cursor IDE
 - Generating UI visually: v0.dev (free, by Vercel)
 - Gemini SDK questions: Gemini itself
-- Fallback when Claude quota runs out: ChatGPT or Gemini — paste PROJECT.md same way
 
 ---
 
-## 17. Current Status
+## 15. Current Status
 
-Current phase: Phase 4 — Elo + score breakdown + polish
+Current phase: Phase 6 — Live, deployed, V2 features next
 
 ### Phase checklist
-- [x] Phase 0: Setup (GitHub, Vercel, Supabase, Gemini API key, .env.local, PROJECT.md in repo)
-- [x] Phase 1: Database + auth (schema applied, RLS on, Google OAuth working, Drizzle configured)
-- [x] Phase 2: Core game loop (create debate, debate room UI, argument submission, two-player flow)
-- [x] Phase 3: AI judge (Gemini integration, real-time scoring, correct completion timing)
-- [ ] Phase 4: Elo + score breakdown + polish
-- [ ] Phase 5: Security + public launch
-- [ ] Phase 6: Growth features
+- [x] Phase 0: Setup (GitHub, Vercel, Supabase, Gemini API key, .env.local)
+- [x] Phase 1: Database + auth
+- [x] Phase 2: Core game loop
+- [x] Phase 3: AI judge
+- [x] Phase 4: Elo + score breakdown
+- [x] Phase 5: Security + public launch prep
+- [x] Phase 6: Oracle Terminal UI renovation + deployment
+- [ ] Phase 7: V2 features (leaderboard, history, profile, challenges)
 
-### Last session
-Built and tested the full debate flow end to end:
-- Google OAuth login working with auto user creation trigger
-- Debate creation, invite link, two-player join flow
-- Turn-based argument submission with countdown timer
-- Gemini AI scoring working in real time (66 vs 59 in test debate)
-- Realtime updates via Supabase — no manual refresh needed
-- Debate completes only after all arguments are scored
-- Fixed RLS policies for topics, debates, arguments tables
+### Last session — Oracle Terminal UI Renovation
+Complete frontend redesign across all pages. Files changed:
 
-### Known issues / active blockers
-- Score breakdown UI (bars + fallacy list) not showing during the debate yet
-- Manual refresh still needed in some edge cases (opponent turn notification)
-- Elo ratings not updating after debate completion
+**New files:**
+- `components/CircuitBackground.tsx` — animated SVG circuit traces with gold + teal, pulse dots, vignette, intensity prop
+- `components/DashboardClient.tsx` — client component with count-up stats, liquid win rate panel, breathing glow CTA
+- `components/ThemeProvider.tsx` — dark/light theme context with localStorage persistence
+- `components/ui/ThemeToggle.tsx` — fixed bottom-right theme toggle button (sun/moon)
+- `components/Navbar.tsx` — global navbar with Oracle wordmark + JOIN debate link bar
 
-### Next immediate task
-Phase 4 — in this order:
-1. Verify ScoreBreakdown component shows during debate (check why bars not appearing mid-debate)
-2. Implement Elo update after debate completes in score/route.ts
-3. Build shareable result card via Next.js OG image API
----
-### Last session
-- Score breakdown bars + fallacy detection showing during debate in real time
-- Arguments persist after debate completes (not replaced by results)
-- "AI is scoring final arguments..." banner during last round
-- Elo updates implemented for ranked debates
-- Win/loss counts updating for casual debates  
-- Switched Gemini model to gemini-3.1-flash-lite (500 RPD free vs 20 RPD on 2.5 Flash)
-- Added 429 rate limit to retry logic alongside 503
+**Replaced files:**
+- `app/globals.css` — full Oracle Terminal design system (tokens, animations, glass cards, responsive breakpoints)
+- `app/layout.tsx` — Cinzel/Crimson Pro/Share Tech Mono fonts, ThemeProvider, anti-flash script
+- `app/page.tsx` — staggered hero, shimmer title, instrument panels, "The Trial" cards
+- `app/login/page.tsx` — Oracle Seal SVG, glass card, Latin inscription
+- `app/dashboard/page.tsx` — now a thin server component, delegates to DashboardClient
+- `app/debate/new/page.tsx` — oracle-input, mode cards, gold slider, word counter
+- `components/debate/DebateRoom.tsx` — color-coded cards, score tribune, dramatic result screen
+- `components/debate/ScoreBreakdown.tsx` — tiered animated bars, fallacy red cards, Oracle Speaks panel
+- `components/auth/LoginButton.tsx` — Oracle-styled Google OAuth button
+- `app/auth/error/page.tsx` — Oracle-styled error page
 
-### Known issues / active blockers
-- Opponent Round 1 argument not getting scored in some cases (need to verify with new model)
-- Need to test full ranked debate Elo change end to end
+**Key fixes applied during session:**
+- Removed `onMouseEnter`/`onMouseLeave` from server components (Next.js App Router constraint)
+- Replaced `<script>` tag with `<Script strategy="beforeInteractive">` from next/script
+- All hover effects on server-rendered pages moved to pure CSS classes
+- Mobile responsive pass: CSS breakpoint classes wired to JSX elements
 
 ### Next immediate task
-Test a full ranked debate with both accounts and verify:
-1. All arguments get scored including opponent round 1
-2. Elo ratings change on dashboard after ranked debate completes
-3. Win/loss counts update
-Then move to: shareable result card (OG image)
+Phase 7 — V2 features, suggested order:
+1. Leaderboard page (`app/leaderboard/page.tsx`) — query users table ordered by elo_rating
+2. Debate history section on dashboard — query debates table for current user
+3. Profile page (`app/profile/[username]/page.tsx`) — public stats + Elo sparkline
 
-### Last session
-Fixed stuck turn bug — fetch fresh debate state before updating turn.
-All core game loop working: scoring, fallacy detection, Elo updates, completion flow.
-
-### Next immediate task
-Build shareable result card at /app/api/og/route.tsx using Next.js OG Image API.
-Shows: topic, both players, final scores, winner, Elo change, top fallacy caught.
-
-### Last session
-Phase 4 complete:
-- Shareable OG result card working on Vercel (topic, scores, winner, usernames)
-- Landing page live at argos-indol.vercel.app
-- Share button on completed debate screen
-- Fixed invalid hex CSS bug in OG route
-
-### Next immediate task
-Phase 5 — Security + public launch prep:
-1. Add content moderation filter before arguments reach Gemini
-2. Add rate limiting on /api/score (prevent abuse)
-3. Install Sentry for error monitoring
-4. Install Posthog for analytics
-5. Test full flow on Vercel with a real friend
-
-### Last session
-Phase 5 complete. Full production test passed on argos-indol.vercel.app.
-All systems working: AI scoring, fallacy detection, real-time updates,
-share card, result screen, security checklist complete.
-
-### Next immediate task
-Phase 6 — Public launch:
-1. Post on r/changemyview, r/slatestarcodex, r/SideProject
-2. Post Show HN on Hacker News
-3. Tweet demo showing AI catching a fallacy
-4. Share with friend for real two-player test
-
-
-
-Document version: 2.0
+Document version: 3.0
 AI provider: Google Gemini free tier
 Infrastructure: 100% free at launch
-Provider-swap architecture: edit only /lib/ai/judge.ts and /lib/ai/opponent.ts to switch to Claude
+Deployed: argos-indol.vercel.app
