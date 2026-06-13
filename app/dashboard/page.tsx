@@ -2,19 +2,21 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DashboardClient } from "@/components/DashboardClient";
 import { fetchDebateHistory } from "@/lib/debates";
+import { getTodayTopic } from "@/lib/dailyTopic";
 
 export default async function DashboardPage() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/login");
 
-    const [{ data: profile }, history] = await Promise.all([
+    const [{ data: profile }, history, dailyTopic] = await Promise.all([
         supabase
             .from("users")
             .select("elo_rating, debates_won, debates_lost, username")
             .eq("id", user.id)
             .single(),
         fetchDebateHistory(supabase, user.id, 10),
+        getTodayTopic(supabase),
     ]);
 
     const elo = profile?.elo_rating ?? 1200;
@@ -32,6 +34,8 @@ export default async function DashboardPage() {
             winRate={winRate}
             totalDebates={totalDebates}
             username={username}
+            userId={user.id}
+            dailyTopic={dailyTopic}
             history={history}
         />
     );

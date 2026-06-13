@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
     id: uuid("id").primaryKey().defaultRandom(),
@@ -29,6 +29,8 @@ export const debates = pgTable("debates", {
     totalRounds: integer("total_rounds").default(3),
     currentRound: integer("current_round").default(1),
     winnerId: uuid("winner_id").references(() => users.id),
+    isPublic: boolean("is_public").default(true),
+    turnStartedAt: timestamp("turn_started_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -64,5 +66,30 @@ export const challenges = pgTable("challenges", {
     creatorId: uuid("creator_id").references(() => users.id),
     topicId: uuid("topic_id").references(() => topics.id),
     status: text("status").default("open"),
+    createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const matchmakingQueue = pgTable("matchmaking_queue", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id).unique().notNull(),
+    eloRating: integer("elo_rating").default(1200),
+    status: text("status").default("waiting"),
+    matchedDebateId: uuid("matched_debate_id").references(() => debates.id),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow(),
+});
+
+export const dailyTopics = pgTable("daily_topics", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    date: text("date").unique().notNull(), // YYYY-MM-DD (UTC)
+    title: text("title").notNull(),
+    category: text("category"),
+    createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const argumentReactions = pgTable("argument_reactions", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    argumentId: uuid("argument_id").references(() => arguments_.id).notNull(),
+    userId: uuid("user_id").references(() => users.id).notNull(),
+    reactionType: text("reaction_type").notNull(), // strong | brutal | questionable
     createdAt: timestamp("created_at").defaultNow(),
 });

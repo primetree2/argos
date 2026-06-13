@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ScoreBreakdown } from "./ScoreBreakdown";
+import { ArgumentReactions } from "./ArgumentReactions";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
 
@@ -53,6 +54,9 @@ export function DebateRoom({
     const [error, setError] = useState("");
     const [copied, setCopied] = useState(false);
     const [shareUrl, setShareUrl] = useState("");
+    // #7: argument reactions (completed public debates only).
+    const [reactionCounts, setReactionCounts] = useState<Record<string, Record<string, number>>>({});
+    const [myReactions, setMyReactions] = useState<Record<string, string>>({});
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const supabase = createClient();
 
@@ -60,6 +64,26 @@ export function DebateRoom({
     useEffect(() => {
         setShareUrl(window.location.href);
     }, []);
+
+    // Load reaction counts once the debate is completed.
+    useEffect(() => {
+        if (debate.status !== "completed") return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`/api/reactions?debateId=${debate.id}`);
+                const data = await res.json();
+                if (cancelled) return;
+                setReactionCounts(data.counts ?? {});
+                setMyReactions(data.mine ?? {});
+            } catch {
+                /* non-critical */
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [debate.status, debate.id]);
 
     const isPlayerA = debate.player_a_id === currentUserId;
     const myArguments = debate.arguments.filter((a) => a.user_id === currentUserId);
@@ -114,7 +138,7 @@ export function DebateRoom({
         const res = await fetch(`/api/debates/${debate.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ player_b_id: currentUserId, status: "active" }),
+            body: JSON.stringify({ player_b_id: currentUserId, status: "active", turn_started_at: new Date().toISOString() }),
         });
         const data = await res.json();
         if (data.debate) setDebate((prev) => ({ ...prev, ...data.debate }));
@@ -137,8 +161,12 @@ export function DebateRoom({
         const nextRound = isLastArgOfRound ? debate.current_round + 1 : debate.current_round;
         const isLastRound = debate.current_round === debate.total_rounds;
         const isFinalSubmission = isLastArgOfRound && isLastRound;
-        await fetch(`/api/debates/${debate.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ current_turn: opponentId, current_round: nextRound, status: isFinalSubmission ? "scoring" : "active" }) });
+        await fetch(`/api/debates/${debate.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ current_turn: opponentId, current_round: nextRound, status: isFinalSubmission ? "scoring" : "active", turn_started_at: new Date().toISOString() }) });
         fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ argumentId: newArg.id }) });
+        // #3: notify the next player it's their turn (only when the debate is still live).
+        if (!isFinalSubmission && opponentId) {
+            fetch("/api/notify-turn", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ debateId: debate.id }) }).catch(() => { });
+        }
         setArgument(""); setSubmitting(false); clearInterval(timerRef.current!);
     };
 
@@ -436,6 +464,12 @@ export function DebateRoom({
                                         </div>
                                         <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{arg.content}</p>
                                         {arg.scoring_status === "done" && <ScoreBreakdown argument={arg} />}
+                                        <ArgumentReactions
+                                            argumentId={arg.id}
+                                            initialCounts={reactionCounts[arg.id] ?? {}}
+                                            initialMine={myReactions[arg.id] ?? null}
+                                            canReact={true}
+                                        />
                                     </div>
                                 );
                             })}
@@ -480,13 +514,28 @@ export function DebateRoom({
                                     </p>
 
                                     <div className="result-actions" style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+                                        {/* #5: Primary share = X/Twitter intent. The /api/og image
+                                            renders the preview card automatically from the URL. */}
+                                        <a
+                                            href={shareUrl ? `https://twitter.com/intent/tweet?text=${encodeURIComponent(
+                                                `I just debated "${debate.topics.title}" on Argos | Score: ${myScore}-${opponentScore}`
+                                            )}&url=${encodeURIComponent(shareUrl)}` : "#"}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn-oracle"
+                                            style={{ textDecoration: "none" }}
+                                            aria-label="Share this result on X"
+                                        >
+                                            Share on X
+                                        </a>
+                                        {/* Secondary fallback: copy link (unchanged behaviour) */}
                                         <button
                                             onClick={() => handleCopy(shareUrl)}
                                             className="btn-ghost"
                                         >
-                                            {copied ? "✓ Copied" : "Share Result"}
+                                            {copied ? "✓ Copied" : "Copy Link"}
                                         </button>
-                                        <a href="/dashboard" className="btn-oracle" style={{ textDecoration: "none" }}>
+                                        <a href="/dashboard" className="btn-ghost" style={{ textDecoration: "none" }}>
                                             Return to Arena →
                                         </a>
                                     </div>

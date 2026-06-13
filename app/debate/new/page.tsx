@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
@@ -20,6 +20,14 @@ export default function NewDebatePage() {
     const [rounds, setRounds] = useState(3);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+
+    // Prefill from ?topic= (e.g. the Daily Topic "Debate this" CTA). Read from
+    // the URL on mount to avoid a Suspense boundary around useSearchParams.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const preset = params.get("topic");
+        if (preset) setTopic(preset);
+    }, []);
 
     const handleCreate = async () => {
         if (!topic.trim()) {
