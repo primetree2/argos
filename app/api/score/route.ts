@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       debates (
         topic_id,
         player_a_id,
+        player_b_id,
         player_a_side,
         topics (title)
       )
@@ -55,6 +56,16 @@ export async function POST(request: Request) {
 
     if (argError || !arg) {
         return NextResponse.json({ error: "Argument not found" }, { status: 404 });
+    }
+
+    // Security (#6): verify the caller is a participant in this debate before
+    // scoring. Without this, any authenticated user could submit an arbitrary
+    // argumentId and trigger scoring on debates they are not part of.
+    const isParticipant =
+        arg.debates.player_a_id === user.id ||
+        arg.debates.player_b_id === user.id;
+    if (!isParticipant) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Prevent double scoring

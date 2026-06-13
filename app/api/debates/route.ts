@@ -33,6 +33,8 @@ export async function POST(request: Request) {
             status: "waiting",
             current_turn: user.id,
             total_rounds: totalRounds ?? 3,
+            is_public: true,
+            turn_started_at: new Date().toISOString(),
         })
         .select()
         .single();

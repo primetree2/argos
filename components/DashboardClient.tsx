@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
+import { MatchmakingButton } from "@/components/MatchmakingButton";
+import { DailyTopicBanner } from "@/components/DailyTopicBanner";
+import type { DailyTopic } from "@/lib/dailyTopic";
 import type { DebateHistoryEntry } from "@/lib/debates";
 
 const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
@@ -45,10 +48,12 @@ interface DashboardClientProps {
     winRate: number;
     totalDebates: number;
     username: string;
+    userId: string;
+    dailyTopic: DailyTopic | null;
     history: DebateHistoryEntry[];
 }
 
-export function DashboardClient({ elo, won, lost, winRate, totalDebates, username, history }: DashboardClientProps) {
+export function DashboardClient({ elo, won, lost, winRate, totalDebates, username, userId, dailyTopic, history }: DashboardClientProps) {
     const eloDisplay = useCountUp(elo, 1400);
     const wonDisplay = useCountUp(won, 900);
     const lostDisplay = useCountUp(lost, 900);
@@ -116,6 +121,13 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                     </div>
                 )}
 
+                {/* Daily Topic */}
+                {dailyTopic && (
+                    <div className="reveal-2" style={{ marginBottom: "2.5rem" }}>
+                        <DailyTopicBanner topic={dailyTopic} />
+                    </div>
+                )}
+
                 {/* Certamen divider */}
                 <div className="reveal-3" style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.25rem" }}>
                     <div className="gold-rule-subtle" style={{ flex: 1 }} />
@@ -143,7 +155,23 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                         </div>
                     </Link>
 
-                    <ComingSoonCard title="Browse Challenges" desc="Accept open challenges from other debaters." iconPath="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8" />
+                    <MatchmakingButton userId={userId} />
+
+                    {/* Browse Challenges — now live (open lobby) */}
+                    <Link href="/challenges" style={{ textDecoration: "none" }}>
+                        <div className="glass-card" style={{ padding: "1.75rem 1.5rem", borderTop: "1px solid var(--teal)", cursor: "pointer", height: "100%" }}>
+                            <ActionIcon color="var(--teal)">
+                                <path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </ActionIcon>
+                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.9rem", fontWeight: 600, letterSpacing: "0.06em", color: "var(--text-primary)", marginBottom: "0.4rem" }}>
+                                Browse Challenges
+                            </p>
+                            <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.88rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                Accept open challenges from other debaters.
+                            </p>
+                        </div>
+                    </Link>
+
                     <ComingSoonCard title="Debate vs AI" desc="Test your arguments against the Oracle itself." iconPath="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2zM4 20c0-4 3.6-7 8-7s8 3 8 7" />
 
                     {/* Leaderboard — now live */}
@@ -227,6 +255,16 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
           border-color: var(--gold-border-hover);
           background: var(--gold-glow);
           transform: translateX(4px);
+        }
+        .daily-topic-card {
+          transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+        }
+        .daily-topic-card:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-card), var(--shadow-gold);
+        }
+        .daily-topic-card:hover .daily-topic-cta {
+          background: var(--gold-bright);
         }
       `}</style>
         </div>

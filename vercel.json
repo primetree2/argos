@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/auto-forfeit",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/daily-topic",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
