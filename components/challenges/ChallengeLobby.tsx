@@ -15,10 +15,14 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
     const [postError, setPostError] = useState("");
 
     const [acceptingId, setAcceptingId] = useState<string | null>(null);
-    // Track which challenge IDs are already taken so we disable them immediately
-    const [takenIds, setTakenIds] = useState<Set<string>>(new Set());
-    // Per-card error: maps challenge id -> error message
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+
+    // IDs removed client-side immediately on accept conflict or delete
+    const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
     const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+
+    const removeCard = (id: string) =>
+        setRemovedIds((prev) => new Set(prev).add(id));
 
     const handlePost = async () => {
         if (!topic.trim()) { setPostError("Enter a topic to post a challenge."); return; }
@@ -49,14 +53,13 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
             const res = await fetch(`/api/challenges/${id}/accept`, { method: "POST" });
             const data = await res.json();
             if (!res.ok) {
-                // Mark this card as taken so it shows "Accepted" and stays unclickable
-                setTakenIds((prev) => new Set(prev).add(id));
+                // Challenge already taken — hide it immediately
+                removeCard(id);
                 setCardErrors((prev) => ({
                     ...prev,
                     [id]: data.error ?? "This challenge was just accepted by someone else.",
                 }));
                 setAcceptingId(null);
-                // Refresh in background to sync list
                 router.refresh();
                 return;
             }
@@ -67,7 +70,30 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
         }
     };
 
+    const handleDelete = async (id: string) => {
+        setDeletingId(id);
+        try {
+            const res = await fetch(`/api/challenges?id=${id}`, { method: "DELETE" });
+            if (!res.ok) {
+                const data = await res.json();
+                setCardErrors((prev) => ({ ...prev, [id]: data.error ?? "Could not withdraw challenge." }));
+                setDeletingId(null);
+                return;
+            }
+            // Remove card instantly without waiting for router.refresh
+            removeCard(id);
+            setDeletingId(null);
+            router.refresh();
+        } catch {
+            setCardErrors((prev) => ({ ...prev, [id]: "The Oracle is unreachable. Try again." }));
+            setDeletingId(null);
+        }
+    };
+
     const wordCount = topic.trim() ? topic.trim().split(/\s+/).length : 0;
+
+    // Filter out removed cards client-side
+    const visibleChallenges = challenges.filter((c) => !removedIds.has(c.id));
 
     return (
         <>
@@ -105,7 +131,6 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                     style={{ resize: "none" }}
                 />
 
-                {/* Category chips */}
                 <div style={{ marginTop: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
                     {CATEGORIES.map((cat) => {
                         const active = category === cat;
@@ -151,16 +176,16 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                     Awaiting an Opponent
                 </p>
 
-                {challenges.length === 0 ? (
+                {visibleChallenges.length === 0 ? (
                     <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", color: "var(--text-tertiary)", fontSize: "0.95rem", textAlign: "center", padding: "3rem 0" }}>
                         The lobby is quiet. Post the first challenge and wait for a worthy opponent.
                     </p>
                 ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-                        {challenges.map((c) => {
-                            const isTaken = takenIds.has(c.id);
+                        {visibleChallenges.map((c) => {
                             const cardError = cardErrors[c.id];
                             const isAccepting = acceptingId === c.id;
+                            const isDeleting = deletingId === c.id;
 
                             return (
                                 <article key={c.id}>
@@ -172,10 +197,9 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                                             alignItems: "center",
                                             gap: "1rem",
                                             flexWrap: "wrap",
-                                            opacity: isTaken ? 0.55 : 1,
-                                            transition: "opacity 300ms ease",
                                         }}
                                     >
+                                        {/* Challenge info */}
                                         <div style={{ flex: 1, minWidth: "12rem" }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.4rem" }}>
                                                 <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.58rem", letterSpacing: "0.18em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
@@ -190,16 +214,49 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                                             </h2>
                                         </div>
 
-                                        {/* Right side — status badge or action button */}
+                                        {/* Action — delete (own) or accept (others) */}
                                         {c.isMine ? (
-                                            <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.1em", color: "var(--text-gold)", border: "1px solid var(--gold-border)", background: "var(--gold-glow)", borderRadius: "var(--radius-sm)", padding: "0.4rem 0.85rem", textTransform: "uppercase", flexShrink: 0 }}>
-                                                ◆ Yours
-                                            </span>
-                                        ) : isTaken ? (
-                                            /* Already accepted — greyed out label, no button */
-                                            <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.1em", color: "var(--text-tertiary)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-sm)", padding: "0.4rem 0.85rem", textTransform: "uppercase", flexShrink: 0 }}>
-                                                Accepted
-                                            </span>
+                                            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexShrink: 0 }}>
+                                                <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.1em", color: "var(--text-gold)", border: "1px solid var(--gold-border)", background: "var(--gold-glow)", borderRadius: "var(--radius-sm)", padding: "0.4rem 0.85rem", textTransform: "uppercase" }}>
+                                                    ◆ Yours
+                                                </span>
+                                                <button
+                                                    onClick={() => handleDelete(c.id)}
+                                                    disabled={isDeleting}
+                                                    title="Withdraw this challenge"
+                                                    style={{
+                                                        background: "transparent",
+                                                        border: "1px solid var(--red-border)",
+                                                        borderRadius: "var(--radius-sm)",
+                                                        color: "var(--red-neon)",
+                                                        cursor: isDeleting ? "not-allowed" : "pointer",
+                                                        padding: "0.4rem 0.7rem",
+                                                        fontFamily: "var(--font-share-tech), monospace",
+                                                        fontSize: "0.6rem",
+                                                        letterSpacing: "0.12em",
+                                                        textTransform: "uppercase",
+                                                        opacity: isDeleting ? 0.5 : 1,
+                                                        transition: "background 150ms ease, opacity 150ms ease",
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: "0.35rem",
+                                                    }}
+                                                    onMouseEnter={(e) => { if (!isDeleting) (e.currentTarget as HTMLButtonElement).style.background = "var(--red-glow)"; }}
+                                                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                                                >
+                                                    {isDeleting ? (
+                                                        <><span style={{ animation: "oracle-pulse 1s ease-in-out infinite" }}>◆</span>&nbsp;Withdrawing…</>
+                                                    ) : (
+                                                        <>
+                                                            {/* Trash icon */}
+                                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
+                                                            </svg>
+                                                            Withdraw
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
                                         ) : (
                                             <button
                                                 onClick={() => handleAccept(c.id)}
@@ -214,7 +271,7 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                                         )}
                                     </div>
 
-                                    {/* Inline error below this specific card */}
+                                    {/* Inline error below card */}
                                     {cardError && (
                                         <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.68rem", color: "var(--red-neon)", letterSpacing: "0.06em", marginTop: "0.4rem", padding: "0.5rem 0.85rem", background: "var(--red-glow)", border: "1px solid var(--red-border)", borderRadius: "var(--radius-md)" }}>
                                             ⚠ {cardError}
