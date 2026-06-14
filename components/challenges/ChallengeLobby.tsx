@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import type { OpenChallenge } from "@/app/challenges/page";
 
 const CATEGORIES = ["Politics", "Science", "Philosophy", "Technology", "Culture"];
 
-export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) {
+export function ChallengeLobby({ challenges: initial, currentUserId }: {
+    challenges: OpenChallenge[];
+    currentUserId: string;
+}) {
     const router = useRouter();
+    const supabase = createClient();
 
     const [topic, setTopic] = useState("");
     const [category, setCategory] = useState<string | null>(null);
@@ -16,13 +21,64 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
 
     const [acceptingId, setAcceptingId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
-
-    // IDs removed client-side immediately on accept conflict or delete
     const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
     const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+    const [refreshing, setRefreshing] = useState(false);
 
     const removeCard = (id: string) =>
         setRemovedIds((prev) => new Set(prev).add(id));
+
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        router.refresh();
+        setTimeout(() => setRefreshing(false), 800);
+    }, [router]);
+
+    // Realtime — listen for challenge status changes
+    useEffect(() => {
+        const myChallenge = initial.find((c) => c.isMine);
+
+        const channel = supabase
+            .channel("challenges-lobby")
+            .on(
+                "postgres_changes",
+                { event: "UPDATE", schema: "public", table: "challenges" },
+                (payload) => {
+                    const updated = payload.new as {
+                        id: string;
+                        status: string;
+                        creator_id: string;
+                        debate_id: string | null;
+                    };
+
+                    // If THIS user's challenge just got accepted → redirect them to the debate
+                    if (
+                        updated.creator_id === currentUserId &&
+                        updated.status === "accepted" &&
+                        updated.debate_id
+                    ) {
+                        router.push(`/debate/${updated.debate_id}`);
+                        return;
+                    }
+
+                    // Any other change → refresh the list silently
+                    router.refresh();
+                }
+            )
+            .on(
+                "postgres_changes",
+                { event: "INSERT", schema: "public", table: "challenges" },
+                () => { router.refresh(); }
+            )
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "challenges" },
+                () => { router.refresh(); }
+            )
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [router, supabase, currentUserId, initial]);
 
     const handlePost = async () => {
         if (!topic.trim()) { setPostError("Enter a topic to post a challenge."); return; }
@@ -53,7 +109,6 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
             const res = await fetch(`/api/challenges/${id}/accept`, { method: "POST" });
             const data = await res.json();
             if (!res.ok) {
-                // Challenge already taken — hide it immediately
                 removeCard(id);
                 setCardErrors((prev) => ({
                     ...prev,
@@ -80,7 +135,6 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                 setDeletingId(null);
                 return;
             }
-            // Remove card instantly without waiting for router.refresh
             removeCard(id);
             setDeletingId(null);
             router.refresh();
@@ -91,9 +145,7 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
     };
 
     const wordCount = topic.trim() ? topic.trim().split(/\s+/).length : 0;
-
-    // Filter out removed cards client-side
-    const visibleChallenges = challenges.filter((c) => !removedIds.has(c.id));
+    const visibleChallenges = initial.filter((c) => !removedIds.has(c.id));
 
     return (
         <>
@@ -170,12 +222,39 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                 </div>
             </div>
 
-            {/* Open challenges list */}
-            <div className="reveal-3">
-                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", textTransform: "uppercase", marginBottom: "1rem" }}>
+            {/* Awaiting header + refresh */}
+            <div className="reveal-3" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", textTransform: "uppercase" }}>
                     Awaiting an Opponent
                 </p>
+                <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    title="Refresh challenges"
+                    style={{
+                        display: "flex", alignItems: "center", gap: "0.35rem",
+                        background: "transparent", border: "1px solid var(--border-default)",
+                        borderRadius: "var(--radius-sm)", color: "var(--text-tertiary)",
+                        fontFamily: "var(--font-share-tech), monospace", fontSize: "0.6rem",
+                        letterSpacing: "0.12em", padding: "0.35rem 0.75rem",
+                        cursor: refreshing ? "not-allowed" : "pointer",
+                        opacity: refreshing ? 0.5 : 1, transition: "color 150ms ease, border-color 150ms ease",
+                        textTransform: "uppercase",
+                    }}
+                    onMouseEnter={(e) => { if (!refreshing) { (e.currentTarget as HTMLButtonElement).style.color = "var(--text-gold)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--gold-border)"; } }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--text-tertiary)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)"; }}
+                >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                        style={{ animation: refreshing ? "oracle-pulse 0.8s ease-in-out infinite" : "none" }}>
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                    {refreshing ? "Refreshing…" : "Refresh"}
+                </button>
+            </div>
 
+            {/* Challenge cards */}
+            <div className="reveal-3">
                 {visibleChallenges.length === 0 ? (
                     <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", color: "var(--text-tertiary)", fontSize: "0.95rem", textAlign: "center", padding: "3rem 0" }}>
                         The lobby is quiet. Post the first challenge and wait for a worthy opponent.
@@ -189,17 +268,7 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
 
                             return (
                                 <article key={c.id}>
-                                    <div
-                                        className="glass-card"
-                                        style={{
-                                            padding: "1.25rem 1.4rem",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "1rem",
-                                            flexWrap: "wrap",
-                                        }}
-                                    >
-                                        {/* Challenge info */}
+                                    <div className="glass-card" style={{ padding: "1.25rem 1.4rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
                                         <div style={{ flex: 1, minWidth: "12rem" }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.4rem" }}>
                                                 <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.58rem", letterSpacing: "0.18em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
@@ -214,7 +283,6 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                                             </h2>
                                         </div>
 
-                                        {/* Action — delete (own) or accept (others) */}
                                         {c.isMine ? (
                                             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexShrink: 0 }}>
                                                 <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.1em", color: "var(--text-gold)", border: "1px solid var(--gold-border)", background: "var(--gold-glow)", borderRadius: "var(--radius-sm)", padding: "0.4rem 0.85rem", textTransform: "uppercase" }}>
@@ -225,21 +293,13 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                                                     disabled={isDeleting}
                                                     title="Withdraw this challenge"
                                                     style={{
-                                                        background: "transparent",
-                                                        border: "1px solid var(--red-border)",
-                                                        borderRadius: "var(--radius-sm)",
-                                                        color: "var(--red-neon)",
+                                                        background: "transparent", border: "1px solid var(--red-border)",
+                                                        borderRadius: "var(--radius-sm)", color: "var(--red-neon)",
                                                         cursor: isDeleting ? "not-allowed" : "pointer",
-                                                        padding: "0.4rem 0.7rem",
-                                                        fontFamily: "var(--font-share-tech), monospace",
-                                                        fontSize: "0.6rem",
-                                                        letterSpacing: "0.12em",
-                                                        textTransform: "uppercase",
-                                                        opacity: isDeleting ? 0.5 : 1,
-                                                        transition: "background 150ms ease, opacity 150ms ease",
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: "0.35rem",
+                                                        padding: "0.4rem 0.7rem", fontFamily: "var(--font-share-tech), monospace",
+                                                        fontSize: "0.6rem", letterSpacing: "0.12em", textTransform: "uppercase",
+                                                        opacity: isDeleting ? 0.5 : 1, transition: "background 150ms ease, opacity 150ms ease",
+                                                        display: "flex", alignItems: "center", gap: "0.35rem",
                                                     }}
                                                     onMouseEnter={(e) => { if (!isDeleting) (e.currentTarget as HTMLButtonElement).style.background = "var(--red-glow)"; }}
                                                     onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
@@ -248,7 +308,6 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                                                         <><span style={{ animation: "oracle-pulse 1s ease-in-out infinite" }}>◆</span>&nbsp;Withdrawing…</>
                                                     ) : (
                                                         <>
-                                                            {/* Trash icon */}
                                                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                                 <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
                                                             </svg>
@@ -271,7 +330,6 @@ export function ChallengeLobby({ challenges }: { challenges: OpenChallenge[] }) 
                                         )}
                                     </div>
 
-                                    {/* Inline error below card */}
                                     {cardError && (
                                         <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.68rem", color: "var(--red-neon)", letterSpacing: "0.06em", marginTop: "0.4rem", padding: "0.5rem 0.85rem", background: "var(--red-glow)", border: "1px solid var(--red-border)", borderRadius: "var(--radius-md)" }}>
                                             ⚠ {cardError}

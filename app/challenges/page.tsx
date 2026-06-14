@@ -5,7 +5,7 @@ import { CircuitBackground } from "@/components/CircuitBackground";
 import { ChallengeLobby } from "@/components/challenges/ChallengeLobby";
 
 export const metadata = {
-    title: "Open Challenges \u2014 Argos",
+    title: "Open Challenges — Argos",
     description: "Post a debate challenge or accept one. No invite needed.",
 };
 
@@ -23,9 +23,7 @@ export interface OpenChallenge {
 
 export default async function ChallengesPage() {
     const supabase = await createClient();
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) redirect("/login");
 
@@ -83,7 +81,10 @@ export default async function ChallengesPage() {
             <Navbar username={me?.username ?? null} />
 
             <main style={{ maxWidth: "820px", margin: "0 auto", padding: "3rem 1.5rem 4rem", position: "relative", zIndex: 1 }}>
-                <ChallengeLobby challenges={challenges} />
+                <ChallengeLobby
+                    challenges={challenges}
+                    currentUserId={user.id}
+                />
             </main>
         </div>
     );
