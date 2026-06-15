@@ -66,6 +66,8 @@ export const challenges = pgTable("challenges", {
     creatorId: uuid("creator_id").references(() => users.id),
     topicId: uuid("topic_id").references(() => topics.id),
     status: text("status").default("open"),
+    // Set when accepted so the creator's lobby can redirect to the new debate.
+    debateId: uuid("debate_id").references(() => debates.id),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
