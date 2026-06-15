@@ -51,18 +51,15 @@ export function ChallengeLobby({ challenges: initial, currentUserId }: {
                         debate_id: string | null;
                     };
 
-                    // If THIS user's challenge just got accepted → redirect them to the debate
+                    // Only redirect if THIS user's challenge was accepted
                     if (
                         updated.creator_id === currentUserId &&
                         updated.status === "accepted" &&
                         updated.debate_id
                     ) {
                         router.push(`/debate/${updated.debate_id}`);
-                        return;
                     }
-
-                    // Any other change → refresh the list silently
-                    router.refresh();
+                    // Do NOT call router.refresh() on UPDATE — causes infinite loop
                 }
             )
             .on(
