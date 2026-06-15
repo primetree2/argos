@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { moderateContent } from "@/lib/moderation";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { ArgumentReactions } from "./ArgumentReactions";
 import { Navbar } from "@/components/Navbar";
@@ -32,6 +34,7 @@ interface Debate {
     player_b_id: string | null;
     player_a_side: string;
     current_turn: string;
+    winner_id: string | null;
     total_rounds: number;
     current_round: number;
     topics: { title: string; category: string | null };
@@ -55,17 +58,50 @@ export function DebateRoom({
     const [copied, setCopied] = useState(false);
     const [resigning, setResigning] = useState(false);
     const [resignConfirm, setResignConfirm] = useState(false);
+    // Optimistic argument: shown immediately after submit, replaced by realtime.
+    const [optimisticArg, setOptimisticArg] = useState<Argument | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const router = useRouter();
+
+    // Auto-grow textarea to fit content (mobile-friendly).
+    const growTextarea = () => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.height = `${el.scrollHeight}px`;
+    };
 
     const handleResign = async () => {
         if (!resignConfirm) { setResignConfirm(true); return; }
         setResigning(true);
-        await fetch(`/api/debates/${debate.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "resign" }),
-        });
-        setResigning(false);
-        setResignConfirm(false);
+        setError("");
+        try {
+            const res = await fetch(`/api/debates/${debate.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "resign" }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setError(data.error ?? "Failed to resign.");
+                setResigning(false);
+                setResignConfirm(false);
+                return;
+            }
+            // Reflect the completed state immediately; realtime will reconcile too.
+            if (data.debate) {
+                setDebate((prev) => ({ ...prev, ...data.debate }));
+            } else {
+                setDebate((prev) => ({ ...prev, status: "completed" }));
+            }
+            clearInterval(timerRef.current!);
+            router.refresh();
+        } catch {
+            setError("Failed to resign.");
+        } finally {
+            setResigning(false);
+            setResignConfirm(false);
+        }
     };
 
 
@@ -75,6 +111,7 @@ export function DebateRoom({
     const [myReactions, setMyReactions] = useState<Record<string, string>>({});
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const supabase = createClient();
+
 
     // Share URL read after mount — avoids SSR/client hydration mismatch
     useEffect(() => {
@@ -123,10 +160,17 @@ export function DebateRoom({
                 (payload) => { setDebate((prev) => ({ ...prev, ...(payload.new as Debate) })); })
             .on("postgres_changes", { event: "*", schema: "public", table: "arguments", filter: `debate_id=eq.${debate.id}` },
                 (payload) => {
+                    const incoming = payload.new as Argument;
+                    // Once the real row arrives, drop the optimistic placeholder.
+                    setOptimisticArg((prev) =>
+                        prev && prev.user_id === incoming.user_id && prev.round_number === incoming.round_number
+                            ? null
+                            : prev
+                    );
                     setDebate((prev) => {
-                        const exists = prev.arguments.find((a) => a.id === (payload.new as Argument).id);
-                        if (exists) return { ...prev, arguments: prev.arguments.map((a) => a.id === (payload.new as Argument).id ? (payload.new as Argument) : a) };
-                        return { ...prev, arguments: [...prev.arguments, payload.new as Argument] };
+                        const exists = prev.arguments.find((a) => a.id === incoming.id);
+                        if (exists) return { ...prev, arguments: prev.arguments.map((a) => a.id === incoming.id ? incoming : a) };
+                        return { ...prev, arguments: [...prev.arguments, incoming] };
                     });
                 })
             .subscribe();
@@ -161,29 +205,61 @@ export function DebateRoom({
     };
 
     // ── handleSubmit ──
+    // Optimistic: inject a local pending argument immediately so the player
+    // sees their text in the feed without waiting for the server round-trip.
+    // The real row arrives via realtime and replaces the placeholder.
+    // On error the placeholder is removed and the textarea is restored.
     const handleSubmit = async () => {
-        if (!argument.trim() || argument.trim().split(/\s+/).length < 10) { setError("Argument must be at least 10 words."); return; }
-        setSubmitting(true); setError("");
-        const { data: newArg, error: argError } = await supabase
-            .from("arguments")
-            .insert({ debate_id: debate.id, user_id: currentUserId, round_number: debate.current_round, content: argument.trim(), scoring_status: "pending" })
-            .select().single();
-        if (argError || !newArg) { setError("Failed to submit argument."); setSubmitting(false); return; }
-        const { data: freshDebate } = await supabase.from("debates").select("player_a_id, player_b_id, current_round, total_rounds").eq("id", debate.id).single();
-        if (!freshDebate) { setError("Failed to update debate state."); setSubmitting(false); return; }
-        const opponentId = freshDebate.player_a_id === currentUserId ? freshDebate.player_b_id : freshDebate.player_a_id;
-        const argsThisRound = debate.arguments.filter((a) => a.round_number === debate.current_round).length;
-        const isLastArgOfRound = argsThisRound >= 1;
-        const nextRound = isLastArgOfRound ? debate.current_round + 1 : debate.current_round;
-        const isLastRound = debate.current_round === debate.total_rounds;
-        const isFinalSubmission = isLastArgOfRound && isLastRound;
-        await fetch(`/api/debates/${debate.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ current_turn: opponentId, current_round: nextRound, status: isFinalSubmission ? "scoring" : "active", turn_started_at: new Date().toISOString() }) });
-        fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ argumentId: newArg.id }) });
-        // #3: notify the next player it's their turn (only when the debate is still live).
-        if (!isFinalSubmission && opponentId) {
-            fetch("/api/notify-turn", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ debateId: debate.id }) }).catch(() => { });
+        const trimmed = argument.trim();
+        if (!trimmed || trimmed.split(/\s+/).length < 10) { setError("Argument must be at least 10 words."); return; }
+        const mod = moderateContent(trimmed);
+        if (!mod.allowed) { setError(mod.reason ?? "Argument rejected."); return; }
+
+        // Inject optimistic placeholder immediately.
+        const placeholder: Argument = {
+            id: `optimistic-${Date.now()}`,
+            user_id: currentUserId,
+            round_number: debate.current_round,
+            content: trimmed,
+            submitted_at: new Date().toISOString(),
+            score_total: null,
+            score_clarity: null,
+            score_evidence: null,
+            score_logic: null,
+            score_rebuttal: null,
+            fallacy_penalty: null,
+            fallacies_found: [],
+            ai_feedback: null,
+            scoring_status: "pending",
+        };
+        setOptimisticArg(placeholder);
+        setArgument("");
+        if (textareaRef.current) textareaRef.current.style.height = "auto";
+        clearInterval(timerRef.current!);
+        setSubmitting(true);
+        setError("");
+
+        try {
+            const res = await fetch(`/api/debates/${debate.id}/argument`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ content: trimmed }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                // Roll back: remove placeholder and restore textarea.
+                setOptimisticArg(null);
+                setArgument(trimmed);
+                setError(data.error ?? "Failed to submit argument.");
+            }
+            // On success realtime replaces the placeholder; nothing to do here.
+        } catch {
+            setOptimisticArg(null);
+            setArgument(trimmed);
+            setError("Failed to submit argument.");
+        } finally {
+            setSubmitting(false);
         }
-        setArgument(""); setSubmitting(false); clearInterval(timerRef.current!);
     };
 
     const handleCopy = async (text: string) => {
@@ -312,7 +388,19 @@ export function DebateRoom({
                 {/* ═══ ACTIVE + SCORING ═══ */}
                 {(debate.status === "active" || debate.status === "scoring") && (
                     <>
-                        {[...debate.arguments]
+                        {[
+                            ...debate.arguments,
+                            // Append optimistic placeholder only if realtime hasn't
+                            // delivered the real row yet (matched by user + round).
+                            ...(optimisticArg &&
+                                !debate.arguments.some(
+                                    (a) =>
+                                        a.user_id === optimisticArg.user_id &&
+                                        a.round_number === optimisticArg.round_number
+                                )
+                                ? [optimisticArg]
+                                : []),
+                        ]
                             .sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime())
                             .map((arg) => {
                                 const isMine = arg.user_id === currentUserId;
@@ -418,12 +506,24 @@ export function DebateRoom({
                                 </div>
 
                                 <textarea
+                                    ref={textareaRef}
                                     value={argument}
-                                    onChange={(e) => { setArgument(e.target.value); if (error) setError(""); }}
+                                    onChange={(e) => {
+                                        setArgument(e.target.value);
+                                        if (error) setError("");
+                                        growTextarea();
+                                    }}
                                     placeholder="Make your argument. Be specific, cite evidence, address your opponent…"
                                     rows={5}
                                     className="oracle-input"
-                                    style={{ resize: "none", marginBottom: "0.75rem" }}
+                                    style={{
+                                        resize: "none",
+                                        marginBottom: "0.75rem",
+                                        // Prevent iOS Safari from zooming on focus.
+                                        fontSize: "16px",
+                                        minHeight: "120px",
+                                        overflowY: "hidden",
+                                    }}
                                 />
 
                                 {error && (
@@ -511,8 +611,13 @@ export function DebateRoom({
 
                         {/* Result card */}
                         {(() => {
-                            const won = myScore > opponentScore;
-                            const tied = myScore === opponentScore;
+                            // Honor an explicit winner_id (resign/forfeit) over the raw
+                            // score comparison; fall back to scores when absent.
+                            const won =
+                                debate.winner_id != null
+                                    ? debate.winner_id === currentUserId
+                                    : myScore > opponentScore;
+                            const tied = debate.winner_id == null && myScore === opponentScore;
                             return (
                                 <div
                                     style={{

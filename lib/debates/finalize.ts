@@ -1,13 +1,21 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { calculateElo } from "@/lib/ai/elo";
 
 /**
- * Finalize a debate if every argument has been scored.
+ * Finalize a debate once every argument has reached a terminal scoring state.
  *
- * This mirrors the completion + Elo logic in /api/score so that paths which
- * complete a debate without going through the judge (e.g. the auto-forfeit
- * cron, where the final argument is a pre-scored 0) can still settle the
- * result and update ratings. It is intentionally idempotent: it only acts when
- * the debate is in "scoring" status and all arguments are "done".
+ * Terminal states are "done" (scored by the judge) and "failed" (scoring could
+ * not complete after retries, or the content was rejected). A "failed"
+ * argument counts as 0 points — the same value already written for forfeits —
+ * so a single transient Gemini error can no longer strand a fully-played
+ * debate in "scoring" forever (it previously waited for the 48h ghost cleanup,
+ * which then wrongly settled it as a forfeit).
+ *
+ * Arguments still "pending" or "scoring" are genuinely in flight and block
+ * finalization until they settle.
+ *
+ * Idempotent: only acts when the debate is in "scoring" status, guarded by a
+ * conditional update so concurrent callers can't double-apply ratings.
  *
  * @returns true if the debate was finalized by this call.
  */
@@ -21,8 +29,13 @@ export async function finalizeIfComplete(
         .eq("debate_id", debateId);
 
     if (!allArgs || allArgs.length === 0) return false;
-    const allScored = allArgs.every((a) => a.scoring_status === "done");
-    if (!allScored) return false;
+
+    // Every argument must be terminal (done or failed). Anything still pending
+    // or scoring means the judge hasn't finished yet — don't finalize.
+    const allSettled = allArgs.every(
+        (a) => a.scoring_status === "done" || a.scoring_status === "failed"
+    );
+    if (!allSettled) return false;
 
     const { data: debate } = await client
         .from("debates")
@@ -66,35 +79,35 @@ export async function finalizeIfComplete(
     if (debate.mode === "ranked") {
         const { data: winner } = await client
             .from("users")
-            .select("elo_rating, debates_won")
+            .select("elo_rating, debates_won, debates_lost")
             .eq("id", winnerId)
             .single();
         const { data: loser } = await client
             .from("users")
-            .select("elo_rating, debates_lost")
+            .select("elo_rating, debates_won, debates_lost")
             .eq("id", loserId)
             .single();
 
         if (winner && loser) {
-            const winnerGames = winner.debates_won ?? 0;
-            const loserGames = loser.debates_lost ?? 0;
-            const kFactor = (games: number) => (games < 30 ? 32 : 16);
-            const expectedWinner =
-                1 / (1 + Math.pow(10, (loser.elo_rating - winner.elo_rating) / 400));
-            const newWinnerElo = Math.round(
-                winner.elo_rating + kFactor(winnerGames) * (1 - expectedWinner)
-            );
-            const newLoserElo = Math.round(
-                loser.elo_rating + kFactor(loserGames) * (0 - (1 - expectedWinner))
+            // K-factor is driven by TOTAL games played (wins + losses), not just
+            // wins/losses. Using one half understates experience and keeps
+            // established players on the high-volatility K.
+            const winnerGames = (winner.debates_won ?? 0) + (winner.debates_lost ?? 0);
+            const loserGames = (loser.debates_won ?? 0) + (loser.debates_lost ?? 0);
+            const { newWinnerElo, newLoserElo } = calculateElo(
+                winner.elo_rating,
+                loser.elo_rating,
+                winnerGames,
+                loserGames
             );
 
             await client
                 .from("users")
-                .update({ elo_rating: newWinnerElo, debates_won: winnerGames + 1 })
+                .update({ elo_rating: newWinnerElo, debates_won: (winner.debates_won ?? 0) + 1 })
                 .eq("id", winnerId);
             await client
                 .from("users")
-                .update({ elo_rating: newLoserElo, debates_lost: loserGames + 1 })
+                .update({ elo_rating: newLoserElo, debates_lost: (loser.debates_lost ?? 0) + 1 })
                 .eq("id", loserId);
 
             await client.from("elo_history").insert([

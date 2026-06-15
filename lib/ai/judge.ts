@@ -29,7 +29,8 @@ export async function scoreArgument(
             const result = await model.generateContent(prompt);
             const text = result.response.text();
             const clean = text.replace(/```json|```/g, "").trim();
-            return JSON.parse(clean) as ScoreResult;
+            const raw = JSON.parse(clean) as Partial<ScoreResult>;
+            return normalizeScore(raw);
         } catch (error: any) {
             const is503 = error?.status === 503 || error?.status === 429 ||
                 String(error).includes("503") || String(error).includes("429");
@@ -45,4 +46,47 @@ export async function scoreArgument(
         }
     }
     throw new Error("Max retries exceeded");
+}
+
+// Clamp an integer into [min, max], defaulting non-numeric input to `min`.
+function clampInt(value: unknown, min: number, max: number): number {
+    const n = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : min;
+    return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Trust the model for qualitative judgement, but never for arithmetic or
+ * range. Each component is clamped to 0-20, the fallacy penalty to [-60, 0],
+ * and `total` is RECOMPUTED server-side (clamped to >= 0) rather than trusting
+ * the model's own sum, which can be inconsistent or out of range. score_total
+ * drives the winner determination, so this must be authoritative.
+ */
+function normalizeScore(raw: Partial<ScoreResult>): ScoreResult {
+    const clarity = clampInt(raw.clarity, 0, 20);
+    const evidence = clampInt(raw.evidence, 0, 20);
+    const logic = clampInt(raw.logic, 0, 20);
+    const rebuttal = clampInt(raw.rebuttal, 0, 20);
+    const fallacy_penalty = clampInt(raw.fallacy_penalty, -60, 0);
+
+    const total = Math.max(
+        0,
+        clarity + evidence + logic + rebuttal + fallacy_penalty
+    );
+
+    const fallacies_found = Array.isArray(raw.fallacies_found)
+        ? raw.fallacies_found.filter(
+            (f) => f && typeof f.name === "string"
+        )
+        : [];
+
+    return {
+        clarity,
+        evidence,
+        logic,
+        rebuttal,
+        fallacy_penalty,
+        fallacies_found,
+        feedback: typeof raw.feedback === "string" ? raw.feedback : "",
+        total,
+    };
 }
