@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { scoreArgument } from "@/lib/ai/judge";
+import { finalizeIfComplete } from "@/lib/debates/finalize";
 import { NextResponse } from "next/server";
 
 // Service role client — bypasses RLS for writing scores
@@ -124,140 +125,11 @@ export async function POST(request: Request) {
             .select()
             .single();
 
-        // If this was the last argument, check if all arguments are scored
-        // and mark debate as completed
-        const { data: allArgs } = await serviceClient
-            .from("arguments")
-            .select("scoring_status")
-            .eq("debate_id", arg.debate_id);
-
-        const { data: debate } = await serviceClient
-            .from("debates")
-            .select("status, total_rounds")
-            .eq("id", arg.debate_id)
-            .single();
-
-        if (debate?.status === "scoring") {
-            const allScored = allArgs?.every((a) => a.scoring_status === "done");
-            if (allScored) {
-                // Calculate final scores
-                const { data: finalArgs } = await serviceClient
-                    .from("arguments")
-                    .select("user_id, score_total")
-                    .eq("debate_id", arg.debate_id);
-
-                const { data: debateFull } = await serviceClient
-                    .from("debates")
-                    .select("player_a_id, player_b_id, mode")
-                    .eq("id", arg.debate_id)
-                    .single();
-
-                if (debateFull && finalArgs) {
-                    const scoreA = finalArgs
-                        .filter((a) => a.user_id === debateFull.player_a_id)
-                        .reduce((sum, a) => sum + (a.score_total ?? 0), 0);
-                    const scoreB = finalArgs
-                        .filter((a) => a.user_id === debateFull.player_b_id)
-                        .reduce((sum, a) => sum + (a.score_total ?? 0), 0);
-
-                    const winnerId = scoreA > scoreB
-                        ? debateFull.player_a_id
-                        : scoreB > scoreA
-                            ? debateFull.player_b_id
-                            : null;
-
-                    // Update debate as completed
-                    await serviceClient
-                        .from("debates")
-                        .update({ status: "completed", winner_id: winnerId })
-                        .eq("id", arg.debate_id);
-
-                    // Update Elo only for ranked debates
-                    if (debateFull.mode === "ranked" && winnerId) {
-                        const loserId = winnerId === debateFull.player_a_id
-                            ? debateFull.player_b_id
-                            : debateFull.player_a_id;
-
-                        const { data: winner } = await serviceClient
-                            .from("users")
-                            .select("elo_rating, debates_won")
-                            .eq("id", winnerId)
-                            .single();
-
-                        const { data: loser } = await serviceClient
-                            .from("users")
-                            .select("elo_rating, debates_lost")
-                            .eq("id", loserId)
-                            .single();
-
-                        if (winner && loser) {
-                            const winnerGames = (winner.debates_won ?? 0);
-                            const loserGames = (loser.debates_lost ?? 0);
-                            const kFactor = (games: number) => games < 30 ? 32 : 16;
-
-                            const expectedWinner = 1 / (1 + Math.pow(10, (loser.elo_rating - winner.elo_rating) / 400));
-                            const newWinnerElo = Math.round(winner.elo_rating + kFactor(winnerGames) * (1 - expectedWinner));
-                            const newLoserElo = Math.round(loser.elo_rating + kFactor(loserGames) * (0 - (1 - expectedWinner)));
-
-                            // Update winner
-                            await serviceClient
-                                .from("users")
-                                .update({
-                                    elo_rating: newWinnerElo,
-                                    debates_won: winnerGames + 1,
-                                })
-                                .eq("id", winnerId);
-
-                            // Update loser
-                            await serviceClient
-                                .from("users")
-                                .update({
-                                    elo_rating: newLoserElo,
-                                    debates_lost: loserGames + 1,
-                                })
-                                .eq("id", loserId);
-
-                            // Record elo history
-                            await serviceClient.from("elo_history").insert([
-                                {
-                                    user_id: winnerId,
-                                    debate_id: arg.debate_id,
-                                    elo_before: winner.elo_rating,
-                                    elo_after: newWinnerElo,
-                                },
-                                {
-                                    user_id: loserId,
-                                    debate_id: arg.debate_id,
-                                    elo_before: loser.elo_rating,
-                                    elo_after: newLoserElo,
-                                },
-                            ]);
-                        }
-                    }
-                    // Update win/loss counts for casual
-                    if (debateFull.mode === "casual" && winnerId) {
-                        const loserId = winnerId === debateFull.player_a_id
-                            ? debateFull.player_b_id
-                            : debateFull.player_a_id;
-
-                        const { data: w } = await serviceClient
-                            .from("users").select("debates_won").eq("id", winnerId).single();
-                        const { data: l } = await serviceClient
-                            .from("users").select("debates_lost").eq("id", loserId).single();
-
-                        await serviceClient
-                            .from("users")
-                            .update({ debates_won: (w?.debates_won ?? 0) + 1 })
-                            .eq("id", winnerId);
-
-                        await serviceClient
-                            .from("users")
-                            .update({ debates_lost: (l?.debates_lost ?? 0) + 1 })
-                            .eq("id", loserId);
-                    }
-                }
-            }
-        }
+        // If every argument is now scored, finalize the debate (completion +
+        // Elo/stats). finalizeIfComplete is idempotent and guarded by a
+        // conditional update, so concurrent final-score requests can't
+        // double-apply ratings or insert duplicate elo_history rows.
+        await finalizeIfComplete(serviceClient, arg.debate_id);
 
         return NextResponse.json({ score, argument: updated });
     } catch (error) {
@@ -265,8 +137,17 @@ export async function POST(request: Request) {
 
         await serviceClient
             .from("arguments")
-            .update({ scoring_status: "failed" })
+            .update({
+                scoring_status: "failed",
+                ai_feedback:
+                    "The Oracle could not score this argument (scoring service error). It counts as 0.",
+            })
             .eq("id", argumentId);
+
+        // A failed argument is terminal (scores 0). If it was the last
+        // outstanding argument, finalize now so the debate doesn't hang in
+        // `scoring` waiting for a score that will never arrive.
+        await finalizeIfComplete(serviceClient, arg.debate_id);
 
         return NextResponse.json(
             { error: "Scoring failed", details: String(error) },

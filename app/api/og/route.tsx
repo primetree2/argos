@@ -64,6 +64,9 @@ export async function GET(request: Request) {
         );
     }
 
+    const topicTitle =
+        (debate.topics as unknown as { title?: string } | null)?.title ?? "Untitled debate";
+
     // Fetch player usernames
     const { data: playerA } = await serviceClient
         .from("users")
@@ -86,11 +89,18 @@ export async function GET(request: Request) {
         .filter((a: any) => a.user_id === debate.player_b_id)
         .reduce((sum: number, a: any) => sum + (a.score_total ?? 0), 0);
 
-    const winnerName = scoreA > scoreB
-        ? playerA?.username
-        : scoreB > scoreA
-            ? playerB?.username
-            : null;
+    const winnerName =
+        debate.winner_id
+            ? debate.winner_id === debate.player_a_id
+                ? playerA?.username
+                : debate.winner_id === debate.player_b_id
+                    ? playerB?.username
+                    : null
+            : scoreA > scoreB
+                ? playerA?.username
+                : scoreB > scoreA
+                    ? playerB?.username
+                    : null;
 
     return new ImageResponse(
         (
@@ -124,7 +134,7 @@ export async function GET(request: Request) {
                     marginBottom: "50px",
                     maxWidth: "900px",
                 }}>
-                    {debate.topics.title}
+                    {topicTitle}
                 </div>
 
                 {/* Scores */}

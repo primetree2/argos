@@ -185,6 +185,32 @@ vercel --prod
 
 ---
 
+## Background Jobs (Cron)
+
+Argos relies on scheduled jobs for daily topic generation, turn timeouts (auto-forfeit), and stale/ghost debate cleanup.
+
+Vercel's free **Hobby plan** allows a maximum of **2 cron jobs**, each able to run **at most once per day**. To stay within those limits, the jobs are configured in `vercel.json` as two daily crons:
+
+| Schedule (UTC) | Endpoint                  | Purpose |
+|----------------|---------------------------|---------|
+| `0 0 * * *`    | `/api/cron/daily-topic`   | Generate the daily topic |
+| `30 0 * * *`   | `/api/cron/maintenance`   | Auto-forfeit idle turns + cleanup waiting/ghost debates |
+
+The `/api/cron/maintenance` route combines the auto-forfeit and cleanup logic into a single job.
+
+### Near-real-time turn timeouts (optional)
+
+Once-daily auto-forfeit is enough to prevent debates hanging forever, but turn timeouts will only be enforced during the daily run. For near-real-time enforcement without a paid Vercel plan, a GitHub Actions workflow (`.github/workflows/maintenance-cron.yml`) calls `/api/cron/maintenance` every 5 minutes.
+
+To enable it, add the following under your GitHub repo **Settings → Secrets and variables → Actions**:
+
+- **Secret** `CRON_SECRET` — must exactly match the `CRON_SECRET` env var set in your Vercel project.
+- **Variable** `APP_URL` — your deployed base URL, e.g. `https://argos-indol.vercel.app` (a secret named `APP_URL` is also accepted as a fallback).
+
+> Set `CRON_SECRET` in your Vercel project env too. Without it, the cron routes only accept Vercel's internal `x-vercel-cron` header and will reject the external GitHub call with `401`. GitHub scheduled runs are best-effort and may be delayed a few minutes; the daily Vercel cron remains a reliable backstop.
+
+---
+
 ## How a Debate Works
 
 1. **Create** — Choose a topic (write your own or pick from suggestions), select Casual or Ranked, pick 2–5 rounds

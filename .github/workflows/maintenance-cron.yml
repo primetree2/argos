@@ -1,0 +1,52 @@
+name: Maintenance cron
+
+# Triggers the /api/cron/maintenance endpoint frequently so turn timeouts
+# (auto-forfeit) and stale/ghost cleanup run in near-real-time, without
+# needing a paid Vercel plan.
+#
+# Required repository secrets/variables (Settings > Secrets and variables > Actions):
+#   - secret  CRON_SECRET : must match the CRON_SECRET env var set in Vercel.
+#   - variable APP_URL    : your deployed base URL, e.g. https://argos.vercel.app
+#                           (falls back to the secret APP_URL if the variable is unset)
+
+on:
+  schedule:
+    # Every 5 minutes. GitHub may delay runs under load; this is best-effort.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call maintenance endpoint
+        env:
+          APP_URL: ${{ vars.APP_URL || secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "APP_URL is not set (repository variable or secret)." >&2
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret is not set." >&2
+            exit 1
+          fi
+
+          # Strip any trailing slash from APP_URL to avoid a double slash.
+          base="${APP_URL%/}"
+          url="$base/api/cron/maintenance"
+
+          echo "Calling $url"
+          status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$url")
+
+          echo "HTTP $status"
+          cat /tmp/body.txt
+          echo
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "Maintenance request failed with status $status" >&2
+            exit 1
+          fi
