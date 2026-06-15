@@ -53,6 +53,22 @@ export function DebateRoom({
     const [timeLeft, setTimeLeft] = useState(600);
     const [error, setError] = useState("");
     const [copied, setCopied] = useState(false);
+    const [resigning, setResigning] = useState(false);
+    const [resignConfirm, setResignConfirm] = useState(false);
+
+    const handleResign = async () => {
+        if (!resignConfirm) { setResignConfirm(true); return; }
+        setResigning(true);
+        await fetch(`/api/debates/${debate.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "resign" }),
+        });
+        setResigning(false);
+        setResignConfirm(false);
+    };
+
+
     const [shareUrl, setShareUrl] = useState("");
     // #7: argument reactions (completed public debates only).
     const [reactionCounts, setReactionCounts] = useState<Record<string, Record<string, number>>>({});
@@ -417,6 +433,25 @@ export function DebateRoom({
                                 )}
 
                                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                                    <button
+                                        onClick={handleResign}
+                                        disabled={resigning}
+                                        style={{
+                                            fontFamily: "var(--font-cinzel), serif",
+                                            fontSize: "0.65rem",
+                                            letterSpacing: "0.14em",
+                                            padding: "0.7rem 1rem",
+                                            background: "transparent",
+                                            border: `1px solid ${resignConfirm ? "var(--red-neon)" : "var(--border-default)"}`,
+                                            borderRadius: "var(--radius-md)",
+                                            color: resignConfirm ? "var(--red-neon)" : "var(--text-tertiary)",
+                                            cursor: "pointer",
+                                            transition: "all 200ms ease",
+                                            opacity: resigning ? 0.5 : 1,
+                                        }}
+                                    >
+                                        {resigning ? "Resigning…" : resignConfirm ? "Confirm Resign" : "Resign"}
+                                    </button>
                                     <button
                                         onClick={handleSubmit}
                                         disabled={submitting}

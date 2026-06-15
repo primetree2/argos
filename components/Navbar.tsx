@@ -170,42 +170,6 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                         DEBATES
                     </Link>
 
-                    {/* Open challenges lobby link */}
-                    <Link
-                        href="/challenges"
-                        style={{
-                            fontFamily: "var(--font-cinzel), serif",
-                            fontSize: "0.65rem",
-                            letterSpacing: "0.14em",
-                            color: "var(--text-secondary)",
-                            textDecoration: "none",
-                            padding: "0.45rem 0.5rem",
-                            transition: "color 200ms ease",
-                        }}
-                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
-                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
-                    >
-                        LOBBY
-                    </Link>
-
-                    {/* Leaderboard link */}
-                    <Link
-                        href="/leaderboard"
-                        style={{
-                            fontFamily: "var(--font-cinzel), serif",
-                            fontSize: "0.65rem",
-                            letterSpacing: "0.14em",
-                            color: "var(--text-secondary)",
-                            textDecoration: "none",
-                            padding: "0.45rem 0.5rem",
-                            transition: "color 200ms ease",
-                        }}
-                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
-                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
-                    >
-                        RANKS
-                    </Link>
-
                     {/* Join debate — desktop inline icon-button */}
                     {!hideJoinBar && (
                         <button
