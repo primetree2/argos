@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { forfeitDebate } from "@/lib/debates/forfeit";
 import { NextResponse } from "next/server";
 
 const serviceClient = createClient(
@@ -15,7 +16,8 @@ function isAuthorized(request: Request): boolean {
 }
 
 // Runs daily. Deletes debates that are still 'waiting' after 24 hours —
-// i.e. created but never joined by an opponent.
+// i.e. created but never joined by an opponent. Also resolves long-abandoned
+// 'active' ghost debates that got stuck (e.g. a failed resign).
 export async function GET(request: Request) {
     if (!isAuthorized(request)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -52,5 +54,37 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: deleteError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ deleted: ids.length, ids });
+    // ── Resolve "ghost" debates (Bug 3 & 4) ──
+    // Active debates that are badly stuck — e.g. a resign that previously failed
+    // silently, or a row the auto-forfeit cron can't advance because
+    // turn_started_at is null. We use a generous 48h cutoff so we never touch a
+    // live game; anything older is abandoned. The player NOT on turn (the one
+    // who acted last) wins; if that is indeterminate we settle as a draw.
+    const ghostCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { data: ghosts } = await serviceClient
+        .from("debates")
+        .select("id, player_a_id, player_b_id, current_turn")
+        .eq("status", "active")
+        .lt("created_at", ghostCutoff);
+
+    const resolvedGhosts: string[] = [];
+    for (const g of ghosts ?? []) {
+        // Winner is whoever is NOT on turn (i.e. acted last). If we can't tell,
+        // settle as a draw (null winner) so no Elo is awarded unfairly.
+        let winnerId: string | null = null;
+        let loserId: string | null = null;
+        if (g.current_turn && g.player_a_id && g.player_b_id) {
+            winnerId = g.current_turn === g.player_a_id ? g.player_b_id : g.player_a_id;
+            loserId = g.current_turn;
+        }
+        const settled = await forfeitDebate(serviceClient, g.id, winnerId, loserId);
+        if (settled) resolvedGhosts.push(g.id);
+    }
+
+    return NextResponse.json({
+        deleted: ids.length,
+        ids,
+        ghostsResolved: resolvedGhosts.length,
+        ghostIds: resolvedGhosts,
+    });
 }

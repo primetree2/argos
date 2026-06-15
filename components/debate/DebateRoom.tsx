@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { moderateContent } from "@/lib/moderation";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { ArgumentReactions } from "./ArgumentReactions";
 import { Navbar } from "@/components/Navbar";
@@ -32,6 +34,7 @@ interface Debate {
     player_b_id: string | null;
     player_a_side: string;
     current_turn: string;
+    winner_id: string | null;
     total_rounds: number;
     current_round: number;
     topics: { title: string; category: string | null };
@@ -55,17 +58,39 @@ export function DebateRoom({
     const [copied, setCopied] = useState(false);
     const [resigning, setResigning] = useState(false);
     const [resignConfirm, setResignConfirm] = useState(false);
+    const router = useRouter();
 
     const handleResign = async () => {
         if (!resignConfirm) { setResignConfirm(true); return; }
         setResigning(true);
-        await fetch(`/api/debates/${debate.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "resign" }),
-        });
-        setResigning(false);
-        setResignConfirm(false);
+        setError("");
+        try {
+            const res = await fetch(`/api/debates/${debate.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "resign" }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setError(data.error ?? "Failed to resign.");
+                setResigning(false);
+                setResignConfirm(false);
+                return;
+            }
+            // Reflect the completed state immediately; realtime will reconcile too.
+            if (data.debate) {
+                setDebate((prev) => ({ ...prev, ...data.debate }));
+            } else {
+                setDebate((prev) => ({ ...prev, status: "completed" }));
+            }
+            clearInterval(timerRef.current!);
+            router.refresh();
+        } catch {
+            setError("Failed to resign.");
+        } finally {
+            setResigning(false);
+            setResignConfirm(false);
+        }
     };
 
 
@@ -162,20 +187,41 @@ export function DebateRoom({
 
     // ── handleSubmit ──
     const handleSubmit = async () => {
-        if (!argument.trim() || argument.trim().split(/\s+/).length < 10) { setError("Argument must be at least 10 words."); return; }
+        const trimmed = argument.trim();
+        if (!trimmed || trimmed.split(/\s+/).length < 10) { setError("Argument must be at least 10 words."); return; }
+        // Moderate BEFORE inserting so a rejected argument never advances the
+        // turn/round. The /api/score route re-checks server-side (defense in
+        // depth), but doing it here gives immediate feedback and avoids leaving
+        // a `failed` argument mid-debate.
+        const mod = moderateContent(trimmed);
+        if (!mod.allowed) { setError(mod.reason ?? "Argument rejected."); return; }
         setSubmitting(true); setError("");
         const { data: newArg, error: argError } = await supabase
             .from("arguments")
-            .insert({ debate_id: debate.id, user_id: currentUserId, round_number: debate.current_round, content: argument.trim(), scoring_status: "pending" })
+            .insert({ debate_id: debate.id, user_id: currentUserId, round_number: debate.current_round, content: trimmed, scoring_status: "pending" })
             .select().single();
         if (argError || !newArg) { setError("Failed to submit argument."); setSubmitting(false); return; }
-        const { data: freshDebate } = await supabase.from("debates").select("player_a_id, player_b_id, current_round, total_rounds").eq("id", debate.id).single();
+        const { data: freshDebate } = await supabase.from("debates").select("player_a_id, player_b_id, current_round, total_rounds, status").eq("id", debate.id).single();
         if (!freshDebate) { setError("Failed to update debate state."); setSubmitting(false); return; }
+        // Guard: if the debate already advanced past this round (e.g. realtime
+        // lag or a concurrent write), don't advance it again.
+        if (freshDebate.status !== "active" || freshDebate.current_round !== debate.current_round) {
+            setArgument(""); setSubmitting(false); clearInterval(timerRef.current!);
+            fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ argumentId: newArg.id }) });
+            return;
+        }
         const opponentId = freshDebate.player_a_id === currentUserId ? freshDebate.player_b_id : freshDebate.player_a_id;
-        const argsThisRound = debate.arguments.filter((a) => a.round_number === debate.current_round).length;
-        const isLastArgOfRound = argsThisRound >= 1;
-        const nextRound = isLastArgOfRound ? debate.current_round + 1 : debate.current_round;
-        const isLastRound = debate.current_round === debate.total_rounds;
+        // Authoritative count from the DB (includes the row just inserted), not
+        // stale local state. A round only completes once BOTH players have an
+        // argument in it — i.e. two arguments exist for this round.
+        const { count: roundArgCount } = await supabase
+            .from("arguments")
+            .select("id", { count: "exact", head: true })
+            .eq("debate_id", debate.id)
+            .eq("round_number", freshDebate.current_round);
+        const isLastArgOfRound = (roundArgCount ?? 0) >= 2;
+        const nextRound = isLastArgOfRound ? freshDebate.current_round + 1 : freshDebate.current_round;
+        const isLastRound = freshDebate.current_round === freshDebate.total_rounds;
         const isFinalSubmission = isLastArgOfRound && isLastRound;
         await fetch(`/api/debates/${debate.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ current_turn: opponentId, current_round: nextRound, status: isFinalSubmission ? "scoring" : "active", turn_started_at: new Date().toISOString() }) });
         fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ argumentId: newArg.id }) });
@@ -511,8 +557,13 @@ export function DebateRoom({
 
                         {/* Result card */}
                         {(() => {
-                            const won = myScore > opponentScore;
-                            const tied = myScore === opponentScore;
+                            // Honor an explicit winner_id (resign/forfeit) over the raw
+                            // score comparison; fall back to scores when absent.
+                            const won =
+                                debate.winner_id != null
+                                    ? debate.winner_id === currentUserId
+                                    : myScore > opponentScore;
+                            const tied = debate.winner_id == null && myScore === opponentScore;
                             return (
                                 <div
                                     style={{

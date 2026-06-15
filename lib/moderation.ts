@@ -1,5 +1,8 @@
+// Note: no `g` flag. RegExp.test() with the global flag is stateful (advances
+// lastIndex between calls on the same object), which caused intermittent
+// missed/false matches across successive arguments.
 const BLOCKED_PATTERNS = [
-    /\b(fuck|shit|bitch|asshole|cunt|nigger|faggot)\b/gi,
+    /\b(fuck|shit|bitch|asshole|cunt|nigger|faggot)\b/i,
 ];
 
 export function moderateContent(text: string): {
