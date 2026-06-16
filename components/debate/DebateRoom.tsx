@@ -513,7 +513,7 @@ export function DebateRoom({
                                             )}
                                         </div>
 
-                                        <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.7, opacity: 0.85 }}>
+                                        <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.7, opacity: 0.85, maxWidth: "68ch" }}>
                                             {arg.content}
                                         </p>
 
@@ -678,7 +678,7 @@ export function DebateRoom({
                                                 </span>
                                             )}
                                         </div>
-                                        <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{arg.content}</p>
+                                        <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.7, maxWidth: "68ch" }}>{arg.content}</p>
                                         {arg.scoring_status === "done" && <ScoreBreakdown argument={arg} />}
                                         <ArgumentReactions
                                             argumentId={arg.id}

@@ -693,6 +693,51 @@ h4 {
 }
 
 /* ─────────────────────────────────────────────
+   FOCUS VISIBLE — keyboard navigation ring
+───────────────────────────────────────────── */
+
+/* Only show the ring for keyboard users (not mouse clicks), and keep it
+   on-brand with the gold accent. Applies to all interactive elements. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible,
+[role="menuitem"]:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Inputs/textareas already paint their own focus glow; avoid doubling up. */
+.oracle-input:focus-visible {
+  outline: none;
+}
+
+/* ─────────────────────────────────────────────
+   TOUCH TARGETS — coarse pointers (touch)
+───────────────────────────────────────────── */
+
+/* On touch devices, ensure tappable controls meet a comfortable minimum
+   hit area without changing the visual design on desktop. */
+@media (pointer: coarse) {
+
+  button,
+  a[role="menuitem"],
+  .btn-oracle,
+  .btn-ghost,
+  .nav-menu-item {
+    min-height: 44px;
+  }
+
+  .nav-menu-item {
+    display: flex;
+    align-items: center;
+  }
+}
+
+/* ─────────────────────────────────────────────
    REDUCED MOTION
 ───────────────────────────────────────────── */
 
@@ -825,6 +870,99 @@ h4 {
   .join-bar-label {
     width: 100% !important;
   }
+}
+
+/* ── Navbar account dropdown ── */
+.nav-account {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.nav-avatar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--gold-border);
+  color: var(--text-gold);
+  font-family: var(--font-cinzel), serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.nav-avatar-btn:hover,
+.nav-avatar-btn[aria-expanded="true"] {
+  border-color: var(--gold-border-hover);
+  background: var(--bg-glass-hover);
+  box-shadow: var(--shadow-gold-sm);
+}
+
+.nav-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  min-width: 11rem;
+  max-width: calc(100vw - 2rem);
+  background: var(--bg-elevated);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 0.4rem;
+  z-index: 200;
+  animation: oracle-fade-in 0.15s ease both;
+}
+
+.nav-menu-username {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-share-tech), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  padding: 0.4rem 0.55rem;
+}
+
+.nav-menu-divider {
+  height: 1px;
+  background: var(--border-default);
+  margin: 0.3rem 0;
+  border: none;
+}
+
+.nav-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-cinzel), serif;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.5rem 0.55rem;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.nav-menu-item:hover {
+  color: var(--text-gold);
+  background: var(--gold-glow);
 }
 
 /* ── General padding reduction on small phones ── */

@@ -201,9 +201,39 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
 
                 {/* Debate history */}
                 {history.length === 0 ? (
-                    <p className="reveal-6" style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", color: "var(--text-tertiary)", fontSize: "0.95rem", textAlign: "center", padding: "1.5rem 0" }}>
-                        No debates recorded yet. Your chronicle begins with your first trial.
-                    </p>
+                    <div
+                        className="reveal-6 glass-card"
+                        style={{
+                            textAlign: "center",
+                            padding: "2.5rem 1.5rem",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                        }}
+                    >
+                        <svg
+                            width="40"
+                            height="40"
+                            viewBox="0 0 28 28"
+                            fill="none"
+                            aria-hidden="true"
+                            style={{ marginBottom: "0.5rem", filter: "drop-shadow(0 0 8px rgba(201,168,76,0.25))" }}
+                        >
+                            <polygon points="14,2 26,24 2,24" fill="none" stroke="var(--gold)" strokeWidth="1.25" strokeLinejoin="round" />
+                            <polygon points="14,8 21,21 7,21" fill="var(--gold-glow)" stroke="var(--gold-dim)" strokeWidth="0.75" strokeLinejoin="round" />
+                            <circle cx="14" cy="15" r="1.5" fill="var(--gold)" />
+                        </svg>
+                        <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.22em", color: "var(--text-gold)", textTransform: "uppercase" }}>
+                            Your Chronicle Awaits
+                        </p>
+                        <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", color: "var(--text-secondary)", fontSize: "0.95rem", lineHeight: 1.6, maxWidth: "34ch" }}>
+                            No debates recorded yet. Every legend begins with a first trial.
+                        </p>
+                        <Link href="/debate/new" className="btn-oracle" style={{ marginTop: "0.85rem", textDecoration: "none" }}>
+                            Begin Your First Debate →
+                        </Link>
+                    </div>
                 ) : (
                     <div className="reveal-6" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                         {history.map((h) => (
