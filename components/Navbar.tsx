@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -18,6 +18,30 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
     const [joinLink, setJoinLink] = useState("");
     const [joinError, setJoinError] = useState("");
     const [joinExpanded, setJoinExpanded] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const accountRef = useRef<HTMLDivElement>(null);
+
+    // Close the account dropdown on outside click or Escape.
+    useEffect(() => {
+        if (!menuOpen) return;
+        const onPointerDown = (e: MouseEvent) => {
+            if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
+                setMenuOpen(false);
+            }
+        };
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setMenuOpen(false);
+        };
+        document.addEventListener("mousedown", onPointerDown);
+        document.addEventListener("keydown", onKeyDown);
+        return () => {
+            document.removeEventListener("mousedown", onPointerDown);
+            document.removeEventListener("keydown", onKeyDown);
+        };
+    }, [menuOpen]);
+
+    // First initial for the avatar; falls back to a neutral glyph.
+    const avatarInitial = (username?.trim()?.charAt(0) || "?").toUpperCase();
 
     const handleJoin = useCallback(() => {
         const raw = joinLink.trim();
@@ -213,43 +237,46 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                         </button>
                     )}
 
-                    {/* Username display */}
+                    {/* Account avatar + dropdown menu */}
                     {username && !hideAuth && (
-                        <span
-                            style={{
-                                fontFamily: "var(--font-share-tech), monospace",
-                                fontSize: "0.75rem",
-                                letterSpacing: "0.08em",
-                                color: "var(--text-tertiary)",
-                                paddingLeft: "0.25rem",
-                            }}
-                        >
-                            {username}
-                        </span>
-                    )}
-
-                    {/* Sign out */}
-                    {username && !hideAuth && (
-                        <form action="/auth/signout" method="post">
+                        <div className="nav-account" ref={accountRef}>
                             <button
-                                type="submit"
-                                style={{
-                                    background: "transparent",
-                                    border: "none",
-                                    color: "var(--text-tertiary)",
-                                    fontFamily: "var(--font-cinzel), serif",
-                                    fontSize: "0.60rem",
-                                    letterSpacing: "0.14em",
-                                    cursor: "pointer",
-                                    padding: "0.35rem 0.5rem",
-                                    transition: "color 200ms ease",
-                                }}
-                                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "var(--text-secondary)")}
-                                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "var(--text-tertiary)")}
+                                type="button"
+                                className="nav-avatar-btn"
+                                aria-label="Account menu"
+                                aria-haspopup="menu"
+                                aria-expanded={menuOpen}
+                                onClick={() => setMenuOpen((v) => !v)}
                             >
-                                DEPART
+                                {avatarInitial}
                             </button>
-                        </form>
+
+                            {menuOpen && (
+                                <div className="nav-menu" role="menu">
+                                    <span className="nav-menu-username" title={username}>
+                                        {username}
+                                    </span>
+                                    <hr className="nav-menu-divider" />
+                                    <Link
+                                        href={`/profile/${encodeURIComponent(username)}`}
+                                        role="menuitem"
+                                        className="nav-menu-item"
+                                        onClick={() => setMenuOpen(false)}
+                                    >
+                                        Profile
+                                    </Link>
+                                    <form action="/auth/signout" method="post">
+                                        <button
+                                            type="submit"
+                                            role="menuitem"
+                                            className="nav-menu-item"
+                                        >
+                                            Depart
+                                        </button>
+                                    </form>
+                                </div>
+                            )}
+                        </div>
                     )}
 
                     {/* Sign in — for logged-out state */}
