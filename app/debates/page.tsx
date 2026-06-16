@@ -37,7 +37,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 export default async function PublicDebatesPage({
     searchParams,
 }: {
-    searchParams: Promise<{ filter?: string; category?: string }>;
+    searchParams: Promise<{ filter?: string; category?: string; page?: string }>;
 }) {
     const params = await searchParams;
     const filter: Filter =
@@ -45,6 +45,11 @@ export default async function PublicDebatesPage({
             ? params.filter
             : "recent";
     const activeCategory = params.category ?? null;
+
+    const PAGE_SIZE = 30;
+    const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
 
     const supabase = await createClient();
     const {
@@ -63,15 +68,20 @@ export default async function PublicDebatesPage({
 
     // Completed, public debates. Treat NULL is_public as public so debates that
     // predate the is_public column remain visible (never silently hide content).
-    const { data: debates } = await supabase
+    const { data: debates, count } = await supabase
         .from("debates")
         .select(
-            "id, player_a_id, player_b_id, player_a_side, winner_id, is_public, created_at, topics (title, category)"
+            "id, player_a_id, player_b_id, player_a_side, winner_id, is_public, created_at, topics (title, category)",
+            { count: "exact" }
         )
         .eq("status", "completed")
         .or("is_public.is.null,is_public.eq.true")
         .order("created_at", { ascending: false })
-        .limit(120);
+        .range(from, to);
+
+    const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+    const hasPrev = page > 1;
+    const hasNext = page < totalPages;
 
     const rows: FeedRow[] = [];
     const categories = new Set<string>();
@@ -172,6 +182,18 @@ export default async function PublicDebatesPage({
         sp.set("filter", f);
         if (f === "category" && category) sp.set("category", category);
         return `/debates?${sp.toString()}`;
+    };
+
+    // Page links preserve the active filter/category. Note: 'discussed' and
+    // 'category' re-rank/filter the current page in memory, so pagination walks
+    // the underlying recency-ordered set — 'recent' is the fully accurate paged
+    // view; the others remain best-effort within the page window.
+    const buildPageHref = (p: number) => {
+        const params2 = new URLSearchParams();
+        params2.set("filter", filter);
+        if (filter === "category" && activeCategory) params2.set("category", activeCategory);
+        params2.set("page", String(p));
+        return `/debates?${params2.toString()}`;
     };
 
     return (
@@ -314,6 +336,29 @@ export default async function PublicDebatesPage({
                                 </Link>
                             );
                         })}
+                    </div>
+                )}
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div className="reveal-3" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "1rem", marginTop: "2rem" }}>
+                        {hasPrev ? (
+                            <Link href={buildPageHref(page - 1)} className="btn-ghost" style={{ textDecoration: "none" }}>
+                                ← Prev
+                            </Link>
+                        ) : (
+                            <span className="btn-ghost" style={{ opacity: 0.35, pointerEvents: "none" }}>← Prev</span>
+                        )}
+                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.7rem", letterSpacing: "0.12em", color: "var(--text-tertiary)" }}>
+                            {page} / {totalPages}
+                        </span>
+                        {hasNext ? (
+                            <Link href={buildPageHref(page + 1)} className="btn-ghost" style={{ textDecoration: "none" }}>
+                                Next →
+                            </Link>
+                        ) : (
+                            <span className="btn-ghost" style={{ opacity: 0.35, pointerEvents: "none" }}>Next →</span>
+                        )}
                     </div>
                 )}
             </main>

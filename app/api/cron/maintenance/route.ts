@@ -6,13 +6,17 @@ import { forfeitDebate } from "@/lib/debates/forfeit";
 //
 // Vercel's free Hobby plan allows a maximum of 2 cron jobs, each able to run
 // at most once per day. To stay within those limits we merge the previous
-// `auto-forfeit` and `cleanup-stale` jobs into this single daily route.
+// `auto-forfeit` and `cleanup-stale` jobs into this single route, which is
+// triggered every ~5 minutes for free by the GitHub Actions workflow
+// (.github/workflows/maintenance-cron.yml).
 //
 // It performs, in order:
 //   1. Auto-forfeit: advance any active debate whose current turn has been
 //      idle longer than the turn limit + grace.
-//   2. Cleanup: delete `waiting` debates older than 24h that were never joined.
-//   3. Ghost resolution: settle long-abandoned `active` debates (48h+).
+//   2. Requeue scoring: re-drive arguments stranded in a non-terminal scoring
+//      state (pending/scoring) so a dropped trigger can't strand a debate.
+//   3. Cleanup: delete `waiting` debates older than 24h that were never joined.
+//   4. Ghost resolution: settle long-abandoned `active` debates (48h+).
 //
 // Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. We also accept
 // Vercel's own cron header. Any other caller is rejected.
@@ -24,6 +28,9 @@ const serviceClient = createServiceClient(
 
 // 10-minute turn + 1-minute grace = 11 minutes.
 const TURN_TIMEOUT_MS = 11 * 60 * 1000;
+// Arguments stuck in pending/scoring longer than this are considered dropped
+// and re-driven through the score endpoint.
+const STUCK_SCORING_MS = 2 * 60 * 1000;
 const FORFEIT_TEXT =
     "[Forfeit] The allotted time elapsed before an argument was submitted. This turn is forfeited.";
 
@@ -35,7 +42,7 @@ function isAuthorized(request: Request): boolean {
     return false;
 }
 
-// ── Step 1: auto-forfeit idle turns ──────────────────────────────────────────
+// ── Step 1: auto-forfeit idle turns ────────────────────────────────────
 async function runAutoForfeit(): Promise<{ forfeited: string[]; error?: string }> {
     const cutoff = new Date(Date.now() - TURN_TIMEOUT_MS).toISOString();
 
@@ -126,7 +133,43 @@ async function runAutoForfeit(): Promise<{ forfeited: string[]; error?: string }
     return { forfeited: processed };
 }
 
-// ── Step 2 & 3: cleanup waiting debates + resolve ghost active debates ───────
+// ── Step 2: requeue stranded scoring ──────────────────────────────────
+// Re-drive any argument left in pending/scoring past the stuck threshold. This
+// is the free, cron-side backstop for a dropped scoring trigger (e.g. a mobile
+// session that couldn't authenticate the original call). The score endpoint is
+// idempotent and 'already scored' returns 200, so re-driving is always safe.
+async function runRequeueScoring(origin: string): Promise<{ requeued: string[] }> {
+    const cutoff = new Date(Date.now() - STUCK_SCORING_MS).toISOString();
+
+    const { data: stuck } = await serviceClient
+        .from("arguments")
+        .select("id, user_id, submitted_at")
+        .in("scoring_status", ["pending", "scoring"])
+        .lt("submitted_at", cutoff);
+
+    const requeued: string[] = [];
+    const secret = process.env.CRON_SECRET ?? "";
+
+    for (const a of stuck ?? []) {
+        try {
+            await fetch(`${origin}/api/score`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": secret,
+                },
+                body: JSON.stringify({ argumentId: a.id, userId: a.user_id }),
+            });
+            requeued.push(a.id);
+        } catch (e) {
+            console.error("Requeue scoring error:", e);
+        }
+    }
+
+    return { requeued };
+}
+
+// ── Step 3 & 4: cleanup waiting debates + resolve ghost active debates ─────
 async function runCleanup(): Promise<{
     deleted: string[];
     ghostsResolved: string[];
@@ -185,7 +228,10 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const origin = new URL(request.url).origin;
+
     const forfeit = await runAutoForfeit();
+    const requeue = await runRequeueScoring(origin);
     const cleanup = await runCleanup();
 
     return NextResponse.json({
@@ -193,6 +239,10 @@ export async function GET(request: Request) {
             forfeited: forfeit.forfeited.length,
             debateIds: forfeit.forfeited,
             error: forfeit.error,
+        },
+        requeueScoring: {
+            requeued: requeue.requeued.length,
+            argumentIds: requeue.requeued,
         },
         cleanup: {
             deleted: cleanup.deleted.length,

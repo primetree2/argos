@@ -3,6 +3,12 @@ import { buildJudgePrompt } from "./prompts";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+// Primary judge model + a fallback used only when the primary is rate-limited
+// or overloaded on the final attempt. The fallback is a different model so a
+// per-model quota/outage doesn't fail the whole score.
+const PRIMARY_MODEL = "gemini-3.1-flash-lite";
+const FALLBACK_MODEL = "gemini-2.5-flash-lite";
+
 export interface ScoreResult {
     clarity: number;
     evidence: number;
@@ -21,31 +27,75 @@ export async function scoreArgument(
     prevArgument: string | null,
     retries: number = 3
 ): Promise<ScoreResult> {
-    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
     const prompt = buildJudgePrompt(topic, side, currentArgument, prevArgument);
+
+    const runOnce = async (modelName: string): Promise<ScoreResult> => {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await withTimeout(
+            model.generateContent(prompt),
+            GEMINI_TIMEOUT_MS
+        );
+        const text = result.response.text();
+        const clean = text.replace(/```json|```/g, "").trim();
+        const raw = JSON.parse(clean) as Partial<ScoreResult>;
+        return normalizeScore(raw);
+    };
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-            const result = await model.generateContent(prompt);
-            const text = result.response.text();
-            const clean = text.replace(/```json|```/g, "").trim();
-            const raw = JSON.parse(clean) as Partial<ScoreResult>;
-            return normalizeScore(raw);
+            // Hard per-attempt timeout. Without this a hung Gemini request would
+            // keep the argument in 'scoring' until the maintenance cron requeues
+            // it minutes later. A bounded timeout fails fast and deterministically
+            // so the retry/finalize path runs promptly.
+            return await runOnce(PRIMARY_MODEL);
         } catch (error: any) {
-            const is503 = error?.status === 503 || error?.status === 429 ||
-                String(error).includes("503") || String(error).includes("429");
+            const isRetryable =
+                error?.status === 503 || error?.status === 429 ||
+                error?.name === "TimeoutError" ||
+                String(error).includes("503") || String(error).includes("429") ||
+                String(error).includes("timed out");
             const isLastAttempt = attempt === retries;
 
-            if (is503 && !isLastAttempt) {
+            if (isRetryable && !isLastAttempt) {
                 const waitMs = attempt * 5000; // 5s, 10s, 15s
-                console.log(`Gemini 503 — retrying in ${waitMs / 1000}s (attempt ${attempt}/${retries})`);
+                console.log(`Gemini retryable error — retrying in ${waitMs / 1000}s (attempt ${attempt}/${retries})`);
                 await new Promise((res) => setTimeout(res, waitMs));
                 continue;
+            }
+
+            // Final attempt failed on a retryable (quota/overload/timeout) error:
+            // try the fallback model once before giving up. A per-model 429 then
+            // no longer fails the whole score.
+            if (isRetryable && isLastAttempt) {
+                try {
+                    console.log(`Gemini primary exhausted — trying fallback model ${FALLBACK_MODEL}`);
+                    return await runOnce(FALLBACK_MODEL);
+                } catch (fallbackError) {
+                    throw fallbackError;
+                }
             }
             throw error;
         }
     }
     throw new Error("Max retries exceeded");
+}
+
+// Per-attempt ceiling for a single Gemini call.
+const GEMINI_TIMEOUT_MS = 30000;
+
+// Reject with a TimeoutError if the promise doesn't settle within `ms`.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+            const err = new Error(`Gemini request timed out after ${ms}ms`);
+            err.name = "TimeoutError";
+            reject(err);
+        }, ms);
+        promise.then(
+            (value) => { clearTimeout(timer); resolve(value); },
+            (err) => { clearTimeout(timer); reject(err); }
+        );
+    });
 }
 
 // Clamp an integer into [min, max], defaulting non-numeric input to `min`.
