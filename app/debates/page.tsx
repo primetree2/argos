@@ -13,26 +13,27 @@ export const dynamic = "force-dynamic";
 
 type Filter = "recent" | "discussed" | "category";
 
-interface FeedRow {
-    id: string;
-    topicTitle: string;
-    category: string | null;
-    playerA: string | null;
-    playerB: string | null;
-    sideA: string;
-    scoreA: number;
-    scoreB: number;
-    winner: string | null;
-    argCount: number;
-    topFallacy: string | null;
-    createdAt: string | null;
-}
-
 const FILTERS: { key: Filter; label: string }[] = [
     { key: "recent", label: "Recent" },
     { key: "discussed", label: "Most Discussed" },
     { key: "category", label: "By Category" },
 ];
+
+// One row of the precomputed public_debate_feed view.
+interface FeedRow {
+    id: string;
+    created_at: string | null;
+    side_a: string;
+    topic_title: string;
+    category: string | null;
+    player_a: string | null;
+    player_b: string | null;
+    winner: string | null;
+    score_a: number;
+    score_b: number;
+    arg_count: number;
+    top_fallacy: string | null;
+}
 
 export default async function PublicDebatesPage({
     searchParams,
@@ -66,116 +67,44 @@ export default async function PublicDebatesPage({
         viewerUsername = me?.username ?? null;
     }
 
-    // Completed, public debates. Treat NULL is_public as public so debates that
-    // predate the is_public column remain visible (never silently hide content).
-    const { data: debates, count } = await supabase
-        .from("debates")
-        .select(
-            "id, player_a_id, player_b_id, player_a_side, winner_id, is_public, created_at, topics (title, category)",
-            { count: "exact" }
-        )
-        .eq("status", "completed")
-        .or("is_public.is.null,is_public.eq.true")
-        .order("created_at", { ascending: false })
-        .range(from, to);
+    // Single authoritative query against the precomputed view. Filtering,
+    // sorting and pagination all happen in SQL, so 'Most Discussed' and
+    // 'By Category' are accurate across the WHOLE dataset (not just the page).
+    let query = supabase
+        .from("public_debate_feed")
+        .select("*", { count: "exact" });
+
+    if (filter === "category" && activeCategory) {
+        query = query.eq("category", activeCategory);
+    }
+
+    if (filter === "discussed") {
+        query = query
+            .order("arg_count", { ascending: false })
+            .order("created_at", { ascending: false });
+    } else {
+        query = query.order("created_at", { ascending: false });
+    }
+
+    const { data: feedRows, count } = await query.range(from, to);
+    const visible: FeedRow[] = (feedRows as FeedRow[] | null) ?? [];
 
     const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
     const hasPrev = page > 1;
     const hasNext = page < totalPages;
 
-    const rows: FeedRow[] = [];
-    const categories = new Set<string>();
-
-    if (debates && debates.length > 0) {
-        // Gather every participant id for a single username lookup.
-        const userIds = Array.from(
-            new Set(
-                debates
-                    .flatMap((d) => [d.player_a_id, d.player_b_id])
-                    .filter((id): id is string => Boolean(id))
-            )
-        );
-        const nameMap = new Map<string, string>();
-        if (userIds.length > 0) {
-            const { data: people } = await supabase
-                .from("users")
-                .select("id, username")
-                .in("id", userIds);
-            for (const p of people ?? []) nameMap.set(p.id, p.username);
-        }
-
-        // Gather scoring data for every debate in one query.
-        const debateIds = debates.map((d) => d.id);
-        const { data: args } = await supabase
-            .from("arguments")
-            .select("debate_id, user_id, score_total, fallacy_penalty, fallacies_found")
-            .in("debate_id", debateIds);
-
-        type ArgAgg = {
-            scores: Map<string, number>;
-            count: number;
-            topFallacy: string | null;
-            topPenalty: number;
-        };
-        const aggMap = new Map<string, ArgAgg>();
-        for (const a of args ?? []) {
-            let agg = aggMap.get(a.debate_id);
-            if (!agg) {
-                agg = { scores: new Map(), count: 0, topFallacy: null, topPenalty: 0 };
-                aggMap.set(a.debate_id, agg);
-            }
-            agg.count += 1;
-            if (a.user_id) {
-                agg.scores.set(
-                    a.user_id,
-                    (agg.scores.get(a.user_id) ?? 0) + (a.score_total ?? 0)
-                );
-            }
-            // Track the single heaviest fallacy across the debate.
-            const fallacies = Array.isArray(a.fallacies_found)
-                ? (a.fallacies_found as Array<{ name?: string }>)
-                : [];
-            const penalty = a.fallacy_penalty ?? 0;
-            if (fallacies.length > 0 && penalty >= agg.topPenalty) {
-                agg.topPenalty = penalty;
-                agg.topFallacy = fallacies[0]?.name ?? agg.topFallacy;
-            }
-        }
-
-        for (const d of debates) {
-            const topic = d.topics as unknown as { title: string; category: string | null } | null;
-            if (topic?.category) categories.add(topic.category);
-
-            const agg = aggMap.get(d.id);
-            const scoreA = d.player_a_id ? agg?.scores.get(d.player_a_id) ?? 0 : 0;
-            const scoreB = d.player_b_id ? agg?.scores.get(d.player_b_id) ?? 0 : 0;
-
-            rows.push({
-                id: d.id,
-                topicTitle: topic?.title ?? "Unknown topic",
-                category: topic?.category ?? null,
-                playerA: d.player_a_id ? nameMap.get(d.player_a_id) ?? null : null,
-                playerB: d.player_b_id ? nameMap.get(d.player_b_id) ?? null : null,
-                sideA: d.player_a_side ?? "FOR",
-                scoreA,
-                scoreB,
-                winner: d.winner_id ? nameMap.get(d.winner_id) ?? null : null,
-                argCount: agg?.count ?? 0,
-                topFallacy: agg?.topFallacy ?? null,
-                createdAt: d.created_at,
-            });
-        }
+    // Category chips: a lightweight distinct-category pull for the picker.
+    let categoryList: string[] = [];
+    if (filter === "category") {
+        const { data: cats } = await supabase
+            .from("public_debate_feed")
+            .select("category")
+            .not("category", "is", null)
+            .limit(500);
+        categoryList = Array.from(
+            new Set((cats ?? []).map((c: { category: string | null }) => c.category).filter(Boolean) as string[])
+        ).sort();
     }
-
-    // Apply filter / sort.
-    let visible = rows;
-    if (filter === "discussed") {
-        visible = [...rows].sort((a, b) => b.argCount - a.argCount);
-    } else if (filter === "category" && activeCategory) {
-        visible = rows.filter((r) => r.category === activeCategory);
-    }
-
-    const categoryList = Array.from(categories).sort();
 
     const buildHref = (f: Filter, category?: string) => {
         const sp = new URLSearchParams();
@@ -184,10 +113,6 @@ export default async function PublicDebatesPage({
         return `/debates?${sp.toString()}`;
     };
 
-    // Page links preserve the active filter/category. Note: 'discussed' and
-    // 'category' re-rank/filter the current page in memory, so pagination walks
-    // the underlying recency-ordered set — 'recent' is the fully accurate paged
-    // view; the others remain best-effort within the page window.
     const buildPageHref = (p: number) => {
         const params2 = new URLSearchParams();
         params2.set("filter", filter);
@@ -283,9 +208,9 @@ export default async function PublicDebatesPage({
                 ) : (
                     <div className="reveal-3" style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                         {visible.map((r) => {
-                            const aWon = r.winner !== null && r.winner === r.playerA;
-                            const bWon = r.winner !== null && r.winner === r.playerB;
-                            const sideB = r.sideA === "FOR" ? "AGAINST" : "FOR";
+                            const aWon = r.winner !== null && r.winner === r.player_a;
+                            const bWon = r.winner !== null && r.winner === r.player_b;
+                            const sideB = r.side_a === "FOR" ? "AGAINST" : "FOR";
                             return (
                                 <Link key={r.id} href={`/debate/${r.id}`} style={{ textDecoration: "none" }}>
                                     <article className="glass-card glass-card-gold feed-card" style={{ padding: "1.25rem 1.4rem" }}>
@@ -295,28 +220,28 @@ export default async function PublicDebatesPage({
                                                 {r.category ?? "General"}
                                             </span>
                                             <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--text-tertiary)" }}>
-                                                {r.argCount} arg{r.argCount === 1 ? "" : "s"}
+                                                {r.arg_count} arg{r.arg_count === 1 ? "" : "s"}
                                             </span>
                                         </div>
 
                                         {/* Topic */}
                                         <h2 style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "1.05rem", fontWeight: 600, letterSpacing: "0.03em", lineHeight: 1.3, color: "var(--text-primary)", marginBottom: "0.85rem" }}>
-                                            {r.topicTitle}
+                                            {r.topic_title}
                                         </h2>
 
                                         {/* Players + scores */}
                                         <div className="score-tribune" style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                                            <span className={r.sideA === "FOR" ? "badge-for" : "badge-against"}>{r.sideA}</span>
+                                            <span className={r.side_a === "FOR" ? "badge-for" : "badge-against"}>{r.side_a}</span>
                                             <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.85rem", fontWeight: aWon ? 700 : 500, color: aWon ? "var(--text-gold)" : "var(--text-secondary)" }}>
-                                                {r.playerA ?? "Unknown"}
+                                                {r.player_a ?? "Unknown"}
                                             </span>
                                             <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.95rem", color: "var(--text-primary)", letterSpacing: "0.06em", marginLeft: "auto" }}>
-                                                {r.scoreA}
+                                                {r.score_a}
                                                 <span style={{ color: "var(--text-tertiary)", margin: "0 0.4rem" }}>–</span>
-                                                {r.scoreB}
+                                                {r.score_b}
                                             </span>
                                             <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.85rem", fontWeight: bWon ? 700 : 500, color: bWon ? "var(--text-gold)" : "var(--text-secondary)" }}>
-                                                {r.playerB ?? "Unknown"}
+                                                {r.player_b ?? "Unknown"}
                                             </span>
                                             <span className={sideB === "FOR" ? "badge-for" : "badge-against"}>{sideB}</span>
                                         </div>
@@ -326,9 +251,9 @@ export default async function PublicDebatesPage({
                                             <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.1em", color: r.winner ? "var(--text-gold)" : "var(--text-tertiary)", textTransform: "uppercase" }}>
                                                 {r.winner ? `▸ Victor: ${r.winner}` : "▸ Draw"}
                                             </span>
-                                            {r.topFallacy && (
+                                            {r.top_fallacy && (
                                                 <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.6rem", letterSpacing: "0.06em", color: "var(--red-neon)", border: "1px solid var(--red-border)", background: "var(--red-glow)", borderRadius: "var(--radius-sm)", padding: "0.2rem 0.55rem" }}>
-                                                    ⚠ {r.topFallacy}
+                                                    ⚠ {r.top_fallacy}
                                                 </span>
                                             )}
                                         </div>
