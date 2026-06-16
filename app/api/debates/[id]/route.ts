@@ -33,6 +33,7 @@ export async function GET(
       )
     `)
         .eq("id", id)
+        .order("submitted_at", { referencedTable: "arguments", ascending: true })
         .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

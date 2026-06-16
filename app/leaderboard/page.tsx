@@ -17,7 +17,17 @@ const headStyle: React.CSSProperties = {
     textTransform: "uppercase",
 };
 
-export default async function LeaderboardPage() {
+export default async function LeaderboardPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ page?: string }>;
+}) {
+    const sp = await searchParams;
+    const PAGE_SIZE = 50;
+    const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
     const supabase = await createClient();
     const {
         data: { user },
@@ -33,11 +43,15 @@ export default async function LeaderboardPage() {
         viewerUsername = me?.username ?? null;
     }
 
-    const { data: players } = await supabase
+    const { data: players, count } = await supabase
         .from("users")
-        .select("id, username, elo_rating, debates_won, debates_lost")
+        .select("id, username, elo_rating, debates_won, debates_lost", { count: "exact" })
         .order("elo_rating", { ascending: false })
-        .limit(50);
+        .range(from, to);
+
+    const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+    const hasPrev = page > 1;
+    const hasNext = page < totalPages;
 
     return (
         <div style={{ minHeight: "100vh", background: "var(--bg-void)", color: "var(--text-primary)" }}>
@@ -96,7 +110,7 @@ export default async function LeaderboardPage() {
                                             }}
                                         >
                                             <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.85rem", color: rankColor, width: "2.5rem", flexShrink: 0, letterSpacing: "0.04em", textShadow: i === 0 ? "0 0 10px rgba(201,168,76,0.4)" : undefined }}>
-                                                {String(i + 1).padStart(2, "0")}
+                                                {String(from + i + 1).padStart(2, "0")}
                                             </span>
                                             <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.85rem", fontWeight: 600, letterSpacing: "0.05em", color: "var(--text-primary)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                                 {p.username}
@@ -120,6 +134,29 @@ export default async function LeaderboardPage() {
                                 );
                             })}
                         </div>
+
+                        {/* Pagination */}
+                        {totalPages > 1 && (
+                            <div className="reveal-4" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "1rem", marginTop: "2rem" }}>
+                                {hasPrev ? (
+                                    <Link href={`/leaderboard?page=${page - 1}`} className="btn-ghost" style={{ textDecoration: "none" }}>
+                                        ← Prev
+                                    </Link>
+                                ) : (
+                                    <span className="btn-ghost" style={{ opacity: 0.35, pointerEvents: "none" }}>← Prev</span>
+                                )}
+                                <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.7rem", letterSpacing: "0.12em", color: "var(--text-tertiary)" }}>
+                                    {page} / {totalPages}
+                                </span>
+                                {hasNext ? (
+                                    <Link href={`/leaderboard?page=${page + 1}`} className="btn-ghost" style={{ textDecoration: "none" }}>
+                                        Next →
+                                    </Link>
+                                ) : (
+                                    <span className="btn-ghost" style={{ opacity: 0.35, pointerEvents: "none" }}>Next →</span>
+                                )}
+                            </div>
+                        )}
                     </>
                 )}
             </main>

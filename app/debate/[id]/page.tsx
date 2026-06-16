@@ -50,6 +50,7 @@ export default async function DebatePage({
     `
             )
             .eq("id", id)
+            .order("submitted_at", { referencedTable: "arguments", ascending: true })
             .single(),
         supabase.from("users").select("username").eq("id", user.id).single(),
     ]);

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { moderateContent } from "@/lib/moderation";
+import { moderateContent, MIN_WORDS, wordCount as countWords } from "@/lib/moderation";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { ArgumentReactions } from "./ArgumentReactions";
 import { Navbar } from "@/components/Navbar";
@@ -61,7 +60,6 @@ export function DebateRoom({
     // Optimistic argument: shown immediately after submit, replaced by realtime.
     const [optimisticArg, setOptimisticArg] = useState<Argument | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-    const router = useRouter();
 
     // Auto-grow textarea to fit content (mobile-friendly).
     const growTextarea = () => {
@@ -88,14 +86,15 @@ export function DebateRoom({
                 setResignConfirm(false);
                 return;
             }
-            // Reflect the completed state immediately; realtime will reconcile too.
+            // Reflect the completed state immediately; realtime reconciles the
+            // rest, so no router.refresh() (it forced a redundant full re-fetch
+            // on top of the realtime update).
             if (data.debate) {
                 setDebate((prev) => ({ ...prev, ...data.debate }));
             } else {
                 setDebate((prev) => ({ ...prev, status: "completed" }));
             }
             clearInterval(timerRef.current!);
-            router.refresh();
         } catch {
             setError("Failed to resign.");
         } finally {
@@ -139,20 +138,49 @@ export function DebateRoom({
     }, [debate.status, debate.id]);
 
     const isPlayerA = debate.player_a_id === currentUserId;
-    const myArguments = debate.arguments.filter((a) => a.user_id === currentUserId);
-    const opponentArguments = debate.arguments.filter((a) => a.user_id !== currentUserId);
     const isMyTurn = debate.current_turn === currentUserId;
-    const myScore = myArguments.reduce((sum, a) => sum + (a.score_total ?? 0), 0);
-    const opponentScore = opponentArguments.reduce((sum, a) => sum + (a.score_total ?? 0), 0);
     const mySide = isPlayerA
         ? debate.player_a_side
         : debate.player_a_side === "FOR"
             ? "AGAINST"
             : "FOR";
-    const wordCount = argument.trim() ? argument.trim().split(/\s+/).length : 0;
     const totalPossible = debate.total_rounds * 80;
 
-    // ── Realtime ──
+    // Derived values memoized so they aren't recomputed on every realtime event
+    // or 1s timer tick. Only recompute when the arguments actually change.
+    const { myArguments, opponentArguments, myScore, opponentScore } = useMemo(() => {
+        const mine = debate.arguments.filter((a) => a.user_id === currentUserId);
+        const opp = debate.arguments.filter((a) => a.user_id !== currentUserId);
+        return {
+            myArguments: mine,
+            opponentArguments: opp,
+            myScore: mine.reduce((sum, a) => sum + (a.score_total ?? 0), 0),
+            opponentScore: opp.reduce((sum, a) => sum + (a.score_total ?? 0), 0),
+        };
+    }, [debate.arguments, currentUserId]);
+
+    const wordCount = useMemo(() => countWords(argument), [argument]);
+
+    // ── Realtime + polling fallback ──
+    // Realtime is the fast path, but websockets drop silently on mobile (network
+    // switches, tab backgrounding, channel errors), which previously made a
+    // debate look frozen even when turns/scoring had advanced server-side. We
+    // therefore (a) subscribe to realtime, and (b) run a lightweight poll of the
+    // authoritative GET endpoint while the debate is live, which reconciles the
+    // full state and clears any stale optimistic placeholder. Either path alone
+    // is sufficient; together they make the room self-correcting.
+    const reconcile = useCallback((next: Debate) => {
+        setDebate((prev) => ({ ...prev, ...next, arguments: next.arguments ?? prev.arguments }));
+        // Drop optimistic placeholder once the real row exists in the payload.
+        setOptimisticArg((prev) =>
+            prev && (next.arguments ?? []).some(
+                (a) => a.user_id === prev.user_id && a.round_number === prev.round_number
+            )
+                ? null
+                : prev
+        );
+    }, []);
+
     useEffect(() => {
         const channel = supabase
             .channel(`debate:${debate.id}`)
@@ -177,6 +205,32 @@ export function DebateRoom({
         return () => { supabase.removeChannel(channel); };
     }, [debate.id]);
 
+    // Polling fallback: only while the debate is live (not completed), so a
+    // completed debate makes zero background requests. Reconciles every 8s.
+    useEffect(() => {
+        if (debate.status === "completed") return;
+        let cancelled = false;
+        const poll = async () => {
+            try {
+                const res = await fetch(`/api/debates/${debate.id}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled && data.debate) reconcile(data.debate as Debate);
+            } catch {
+                /* transient — next tick retries */
+            }
+        };
+        const interval = setInterval(poll, 8000);
+        // Reconcile immediately when the tab is refocused (mobile resume).
+        const onVisible = () => { if (document.visibilityState === "visible") poll(); };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+            document.removeEventListener("visibilitychange", onVisible);
+        };
+    }, [debate.id, debate.status, reconcile]);
+
     // ── Timer ── (reacts to turn, round AND status changes)
     useEffect(() => {
         if (!isMyTurn || debate.status !== "active") return;
@@ -186,6 +240,33 @@ export function DebateRoom({
         }, 1000);
         return () => clearInterval(timerRef.current!);
     }, [isMyTurn, debate.current_round, debate.status]);
+
+    // ── Scoring self-heal ──
+    // Backstop for a dropped scoring trigger (e.g. the original /api/score call
+    // failed on a flaky mobile session). While one of MY arguments stays in a
+    // non-terminal state, re-POST /api/score on a repeating interval (not just
+    // once) so a failed retry is itself retried. The endpoint is idempotent and
+    // returns 200 for already-scored rows, so this is always safe. The polling
+    // fallback above also pulls in the score once it lands; together a viewer
+    // recovers within seconds rather than waiting on the maintenance cron.
+    useEffect(() => {
+        const stuck = myArguments.find(
+            (a) =>
+                !a.id.startsWith("optimistic-") &&
+                (a.scoring_status === "pending" || a.scoring_status === "scoring")
+        );
+        if (!stuck) return;
+        const fire = () => {
+            fetch("/api/score", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ argumentId: stuck.id }),
+            }).catch(() => { });
+        };
+        const first = setTimeout(fire, 15000);
+        const repeat = setInterval(fire, 20000);
+        return () => { clearTimeout(first); clearInterval(repeat); };
+    }, [myArguments]);
 
     const formatTime = (s: number) => {
         const m = Math.floor(s / 60);
@@ -211,7 +292,7 @@ export function DebateRoom({
     // On error the placeholder is removed and the textarea is restored.
     const handleSubmit = async () => {
         const trimmed = argument.trim();
-        if (!trimmed || trimmed.split(/\s+/).length < 10) { setError("Argument must be at least 10 words."); return; }
+        if (countWords(trimmed) < MIN_WORDS) { setError(`Argument must be at least ${MIN_WORDS} words.`); return; }
         const mod = moderateContent(trimmed);
         if (!mod.allowed) { setError(mod.reason ?? "Argument rejected."); return; }
 

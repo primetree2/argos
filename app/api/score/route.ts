@@ -4,42 +4,53 @@ import { scoreArgument } from "@/lib/ai/judge";
 import { finalizeIfComplete } from "@/lib/debates/finalize";
 import { NextResponse } from "next/server";
 
-// Service role client — bypasses RLS for writing scores
+// POST /api/score  { argumentId, userId? }
+//
+// Scores a single argument with the AI judge and writes the result back.
+//
+// Auth: this is fundamentally a SYSTEM action, not a user action. It is invoked
+// by (a) the argument route immediately after a successful submit, (b) the
+// maintenance requeue step, and (c) the client self-heal retry. The first two
+// authenticate with an internal shared secret (CRON_SECRET) and pass the
+// already-validated userId. Direct browser calls (self-heal) fall back to
+// cookie auth. Relying ONLY on the submitter's forwarded cookie previously
+// caused arguments to strand in 'pending' when a mobile session was stale.
+
+// Service role client — bypasses RLS for reading context and writing scores.
 const serviceClient = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function POST(request: Request) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { argumentId, userId: bodyUserId } = await request.json();
 
-    if (!user) {
+    if (typeof argumentId !== "string" || !argumentId) {
+        return NextResponse.json({ error: "Missing argumentId" }, { status: 400 });
+    }
+
+    // Resolve the caller identity. Trusted internal callers present the shared
+    // secret and the userId; otherwise we fall back to the session cookie.
+    const secret = process.env.CRON_SECRET;
+    const internalSecret = request.headers.get("x-internal-secret");
+    const isInternal = !!secret && internalSecret === secret;
+
+    let callerId: string | null = null;
+    if (isInternal && typeof bodyUserId === "string") {
+        callerId = bodyUserId;
+    } else {
+        const supabase = await createClient();
+        const {
+            data: { user },
+        } = await supabase.auth.getUser();
+        callerId = user?.id ?? null;
+    }
+
+    if (!callerId) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { argumentId } = await request.json();
-
-    // Fetch and moderate content before scoring
-    const { data: argCheck } = await serviceClient
-        .from("arguments")
-        .select("content")
-        .eq("id", argumentId)
-        .single();
-
-    if (argCheck) {
-        const { moderateContent } = await import("@/lib/moderation");
-        const modResult = moderateContent(argCheck.content);
-        if (!modResult.allowed) {
-            await serviceClient
-                .from("arguments")
-                .update({ scoring_status: "failed", ai_feedback: modResult.reason })
-                .eq("id", argumentId);
-            return NextResponse.json({ error: modResult.reason }, { status: 400 });
-        }
-    }
-
-    // Fetch argument + debate context using service client
+    // Fetch argument + debate context using the service client.
     const { data: arg, error: argError } = await serviceClient
         .from("arguments")
         .select(`
@@ -63,35 +74,44 @@ export async function POST(request: Request) {
     // scoring. Without this, any authenticated user could submit an arbitrary
     // argumentId and trigger scoring on debates they are not part of.
     const isParticipant =
-        arg.debates.player_a_id === user.id ||
-        arg.debates.player_b_id === user.id;
+        arg.debates.player_a_id === callerId ||
+        arg.debates.player_b_id === callerId;
     if (!isParticipant) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Prevent double scoring
+    // Already scored — benign no-op (200). Returning 400 here previously made
+    // legitimate retries (double-fire, self-heal, requeue) look like errors.
     if (arg.scoring_status === "done") {
-        return NextResponse.json({ error: "Already scored" }, { status: 400 });
+        return NextResponse.json({ ok: true, alreadyScored: true });
     }
 
-    // Mark as scoring
+    // Content was already moderated pre-write in the argument route, so there is
+    // no second moderation pass here. (A previous duplicate check could mark an
+    // already-accepted argument 'failed'.)
+
+    // Mark as scoring (idempotent — safe for concurrent retries).
     await serviceClient
         .from("arguments")
         .update({ scoring_status: "scoring" })
         .eq("id", argumentId);
 
-    // Get previous argument from opponent for rebuttal context
+    // Rebuttal context: the opponent's most recent argument submitted BEFORE
+    // this one. Scoping by submitted_at (rather than "latest overall") ensures
+    // round 2+ arguments are judged against the argument they actually replied
+    // to, not a later one delivered by a race.
     const { data: prevArgs } = await serviceClient
         .from("arguments")
         .select("content")
         .eq("debate_id", arg.debate_id)
         .neq("user_id", arg.user_id)
+        .lt("submitted_at", arg.submitted_at)
         .order("submitted_at", { ascending: false })
         .limit(1);
 
     const prevArgument = prevArgs?.[0]?.content ?? null;
 
-    // Determine side
+    // Determine side.
     const isPlayerA = arg.debates.player_a_id === arg.user_id;
     const side = isPlayerA
         ? arg.debates.player_a_side
@@ -107,7 +127,6 @@ export async function POST(request: Request) {
             prevArgument
         );
 
-        // Write score back
         const { data: updated } = await serviceClient
             .from("arguments")
             .update({

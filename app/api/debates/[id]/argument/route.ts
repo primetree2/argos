@@ -15,7 +15,11 @@ import { NextResponse } from "next/server";
 //   2. Moderate the content BEFORE anything is written.
 //   3. Insert + advance atomically via the submit_argument SQL function
 //      (locks the debate row; serializes concurrent submissions).
-//   4. Fire-and-forget scoring + turn notification.
+//   4. Trigger scoring as a TRUSTED system call (internal secret + userId),
+//      not via the caller's forwarded cookie. Forwarding the cookie meant a
+//      stale/missing mobile session caused /api/score to 401 and the argument
+//      to stay 'pending' forever. We await it so a failure is observable and
+//      recoverable rather than silently swallowed.
 
 const serviceClient = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -85,17 +89,25 @@ export async function POST(
         return NextResponse.json({ error: "Failed to submit argument." }, { status: 500 });
     }
 
-    // Fire-and-forget: trigger scoring for this argument.
+    // Trigger scoring as a trusted internal call. We pass the validated userId
+    // and an internal secret so /api/score does NOT depend on the submitter's
+    // (possibly stale) cookie. Awaited so a transient failure leaves the row in
+    // 'pending'/'scoring' for the maintenance requeue + client self-heal to
+    // pick up, rather than being silently lost. We never fail the submission
+    // itself on a scoring error — the argument is already safely persisted.
     const origin = new URL(request.url).origin;
-    fetch(`${origin}/api/score`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            // Forward the caller's cookies so /api/score can authenticate.
-            cookie: request.headers.get("cookie") ?? "",
-        },
-        body: JSON.stringify({ argumentId }),
-    }).catch(() => { });
+    try {
+        await fetch(`${origin}/api/score`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-internal-secret": process.env.CRON_SECRET ?? "",
+            },
+            body: JSON.stringify({ argumentId, userId: user.id }),
+        });
+    } catch {
+        /* recovered asynchronously by maintenance requeue / client self-heal */
+    }
 
     // Notify the player whose turn it now is (no-op if the debate just entered
     // scoring; sendTurnNotification checks status === 'active').
