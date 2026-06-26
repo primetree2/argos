@@ -94,34 +94,32 @@ forward only when money is available.
 > highest-leverage work and is almost entirely free.
 
 ### 🟢 FREE
-1. **✅ DONE — DB indexes.** Shipped as `supabase/migrations/0005_indexes.sql`
-   (`idx_debates_player_a/b`, `idx_debates_status`, `idx_arguments_debate`, `idx_users_elo`,
-   plus a partial index on stuck `scoring_status`). **Manual step:** run the file in the
-   Supabase SQL editor and verify each index exists. *Cost: 0.*
-2. **✅ DONE — vs Oracle AI mode (cold-start killer).** Shipped in MR !8. A user can debate
-   Gemini immediately; the same judge scores both sides.
-   - Implemented via a fixed Oracle system user (`0006_oracle_user.sql`) seated as `player_b`.
-   - `lib/ai/oracle.ts` (`argueAsOracle`) + `buildOracleArgumentPrompt()` — isolated like the judge.
-   - `/api/debates/[id]/oracle-turn` generates + submits via the race-safe `submit_argument` RPC.
-   - `opponent: "ai"` in the create route starts an active casual debate, capped at 3/day
-     (free Gemini quota protection). **Manual step:** run `0006_oracle_user.sql` in Supabase.
-3. **✅ DONE — Stronger moderation, still free.** Shipped in MR !9. `lib/ai/moderation.ts`
-   (`moderateWithOracle()`) adds a cheap Gemini safety pass after the fast regex/length
-   gate in the argument route. Fail-open on AI error. *Cost: marginal Gemini, still free.*
-4. **✅ DONE — Report / block (DB + UI).** Shipped in MR !9. `0007_moderation_reports.sql`
-   adds `reports` + `user_blocks` (RLS) and excludes mutually-blocked players from
-   matchmaking. `/api/reports`, `/api/blocks`, and a `ReportButton` on opponent arguments.
-   **Manual step:** run `0007_moderation_reports.sql` in Supabase. *Cost: 0.*
-   - *Remaining sub-task:* surface a "Block" action on profile pages (API already exists).
-5. **✅ DONE — Basic anti-Sybil + endpoint rate limits.** Shipped in MR !10.
-   `0008_rate_limits.sql` adds a `rate_limits` table + `check_rate_limit()`; `lib/rateLimit.ts`
-   wraps it (fail-open). Applied to `/api/matchmaking` (40/60s) and `/api/score` (60/60s,
-   untrusted path only). Anti-Sybil: `users.signup_ip_hash` (hashed first-seen IP, recorded
-   in `auth/callback`) + `debates.suspected_sybil` set by `flag_sybil_debate()` on join and
-   on match. Flag only — no auto-ban. **Manual step:** run `0008_rate_limits.sql` in Supabase.
-6. **← NEXT — Refactor `DebateRoom.tsx`** into hooks (`useDebateRealtime`, `useTurnTimer`,
+1. **Apply the DB indexes.** Run the `CREATE INDEX` statements from `PROJECT.md` §5
+   (`idx_debates_player_a`, `idx_debates_player_b`, `idx_debates_status`,
+   `idx_arguments_debate`, `idx_users_elo`). Verify each exists in Supabase. *Cost: 0.*
+2. **vs Oracle AI mode (cold-start killer).** Let a user debate Gemini itself when no
+   human opponent is available. Gemini plays the opposing side; the same judge scores both.
+   - Add a debate `mode` value or an `opponent_type` flag (`human` | `ai`).
+   - Reuse `lib/ai/` — add an `argueAsOracle(topic, side, history)` function alongside
+     `scoreArgument`. Keep it isolated like the judge.
+   - This removes the "no opponent" dead-end entirely. **Single biggest free growth unlock.**
+   - Note: doubles Gemini calls per debate (AI argues + AI judges). Gate AI debates per
+     user per day to protect free Gemini quota (e.g. 3/day for non-Pro).
+3. **Stronger moderation, still free.** Replace the 6-word regex with **Gemini's own
+   safety / a dedicated moderation prompt** (you already have a Gemini key). Add a second
+   cheap Gemini call (or reuse the judge response) that returns a safety verdict before an
+   argument is accepted. *Cost: marginal Gemini usage, still free tier.*
+4. **Report / block / mute (DB + UI).** Add a `reports` table and a `user_blocks` table.
+   Add a "Report" button on arguments and a "Block" action on profiles. Hide blocked users
+   from matchmaking and feed. *Cost: 0.*
+5. **Basic anti-Sybil.** At minimum: rate-limit ranked matchmaking per user, and flag
+   debates where both players share a signup IP / device fingerprint (store a hashed
+   fingerprint on the user row). Don't ban automatically yet — just flag for review. *Cost: 0.*
+6. **Rate limit scoring & matchmaking endpoints.** Add the same DB-backed rolling-window
+   guard used in `app/api/debates/route.ts` to `/api/score` and `/api/matchmaking`. *Cost: 0.*
+7. **Refactor `DebateRoom.tsx`** into hooks (`useDebateRealtime`, `useTurnTimer`,
    `useArgumentSubmit`) + sub-components. Pure maintainability; do it before adding
-   spectator/live features on top. *Cost: 0.* **This is the last Phase 1 FREE item.**
+   spectator/live features on top. *Cost: 0.*
 
 ### 💰 PAID (when budget exists)
 - **Real moderation API** (OpenAI Moderation is free; Google Perspective API free tier;
@@ -262,11 +260,9 @@ side is what realistically gets you to six figures.
 ## 9. Suggested execution order (TL;DR for the next agent)
 
 **Do these FREE items, in this order:**
-1. ~~Apply DB indexes (Phase 1).~~ ✅ shipped (`0005_indexes.sql`) — run it in Supabase.
-2. ~~Ship **vs Oracle AI mode** (Phase 1).~~ ✅ shipped (MR !8) — run `0006_oracle_user.sql` in Supabase.
-3. ~~Upgrade moderation to a Gemini safety pass + add report/block (Phase 1).~~ ✅ shipped (MR !9) — run `0007_moderation_reports.sql` in Supabase.
-4. ~~Anti-Sybil + rate-limit `/api/score` and `/api/matchmaking` (Phase 1).~~ ✅ shipped (MR !10) — run `0008_rate_limits.sql` in Supabase.
-5. **← NEXT:** Refactor `DebateRoom.tsx` (last Phase 1 FREE item), then begin Phase 2 (async scoring).
+1. Apply DB indexes (Phase 1).
+2. Ship **vs Oracle AI mode** (Phase 1) — kills cold-start. *Highest growth-per-effort.*
+3. Upgrade moderation to a Gemini safety pass + add report/block (Phase 1) — safety gate before any public growth push.
 4. Make scoring **async** via a Postgres `scoring_jobs` queue drained by the existing cron (Phase 2) — *highest scaling-per-effort.*
 5. Add Supavisor pooling + cache/paginate leaderboard & feed (Phase 2).
 6. Ship **live spectator mode + audience voting + Blitz mode** (Phase 3) — virality.
