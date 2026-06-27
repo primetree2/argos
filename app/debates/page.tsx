@@ -33,6 +33,9 @@ interface FeedRow {
     score_b: number;
     arg_count: number;
     top_fallacy: string | null;
+    // Added by migration 0016 (may be absent before it is applied).
+    player_a_id?: string | null;
+    player_b_id?: string | null;
 }
 
 export default async function PublicDebatesPage({
@@ -58,36 +61,64 @@ export default async function PublicDebatesPage({
     } = await supabase.auth.getUser();
 
     let viewerUsername: string | null = null;
+    // Ids the viewer should not see in the feed: anyone they blocked OR who
+    // blocked them (either direction). Empty for logged-out viewers.
+    let blockedIds: string[] = [];
     if (user) {
-        const { data: me } = await supabase
-            .from("users")
-            .select("username")
-            .eq("id", user.id)
-            .single();
+        const [{ data: me }, { data: blocksOut }, { data: blocksIn }] = await Promise.all([
+            supabase.from("users").select("username").eq("id", user.id).single(),
+            supabase.from("user_blocks").select("blocked_id").eq("blocker_id", user.id),
+            supabase.from("user_blocks").select("blocker_id").eq("blocked_id", user.id),
+        ]);
         viewerUsername = me?.username ?? null;
+        const out = (blocksOut ?? []).map((b: { blocked_id: string }) => b.blocked_id);
+        const inc = (blocksIn ?? []).map((b: { blocker_id: string }) => b.blocker_id);
+        blockedIds = Array.from(new Set([...out, ...inc]));
     }
 
     // Single authoritative query against the precomputed view. Filtering,
     // sorting and pagination all happen in SQL, so 'Most Discussed' and
     // 'By Category' are accurate across the WHOLE dataset (not just the page).
-    let query = supabase
-        .from("public_debate_feed")
-        .select("*", { count: "exact" });
+    // A FRESH builder per attempt: PostgREST builders mutate `this`, so reusing
+    // one across the filtered + fallback attempts would leak filters.
+    const buildBaseQuery = () => {
+        let q = supabase.from("public_debate_feed").select("*", { count: "exact" });
+        if (filter === "category" && activeCategory) {
+            q = q.eq("category", activeCategory);
+        }
+        if (filter === "discussed") {
+            q = q
+                .order("arg_count", { ascending: false })
+                .order("created_at", { ascending: false });
+        } else {
+            q = q.order("created_at", { ascending: false });
+        }
+        return q;
+    };
 
-    if (filter === "category" && activeCategory) {
-        query = query.eq("category", activeCategory);
+    // Hide debates involving a blocked user (either side). Applied in SQL so
+    // pagination counts stay accurate. References player_a_id/player_b_id
+    // (migration 0016); if those columns are missing the query errors and we
+    // fall back to the unfiltered feed so the page stays runnable pre-0016.
+    let feedRows: FeedRow[] | null = null;
+    let count: number | null = null;
+    if (blockedIds.length > 0) {
+        const inList = `(${blockedIds.join(",")})`;
+        const filtered = await buildBaseQuery()
+            .not("player_a_id", "in", inList)
+            .not("player_b_id", "in", inList)
+            .range(from, to);
+        if (!filtered.error) {
+            feedRows = filtered.data as FeedRow[] | null;
+            count = filtered.count ?? null;
+        }
     }
-
-    if (filter === "discussed") {
-        query = query
-            .order("arg_count", { ascending: false })
-            .order("created_at", { ascending: false });
-    } else {
-        query = query.order("created_at", { ascending: false });
+    if (feedRows === null) {
+        const res = await buildBaseQuery().range(from, to);
+        feedRows = res.data as FeedRow[] | null;
+        count = res.count ?? null;
     }
-
-    const { data: feedRows, count } = await query.range(from, to);
-    const visible: FeedRow[] = (feedRows as FeedRow[] | null) ?? [];
+    const visible: FeedRow[] = feedRows ?? [];
 
     const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
     const hasPrev = page > 1;

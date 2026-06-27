@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { ORACLE_USER_ID } from "@/lib/ai/oracle";
+import { getEntitlements, isActionAllowed } from "@/lib/billing/limits";
+import { fetchIsPro, recordUsage, usageToday } from "@/lib/billing/usage";
 import { NextResponse } from "next/server";
 
 // Service-role client: used only to count a user's recent debates for rate
@@ -57,6 +59,29 @@ export async function POST(request: Request) {
         ? "casual"
         : ALLOWED_MODES.includes(mode) ? mode : "casual";
     const resolvedRounds = ALLOWED_ROUNDS.includes(totalRounds) ? totalRounds : 3;
+
+    // ── Entitlement check (Phase 5 plumbing) ──
+    // INERT during beta: getEntitlements().enforced is false while
+    // BETA_UNLIMITED, so isActionAllowed() always returns true and nothing is
+    // blocked here. When the paywall is later switched on, free vs Pro daily
+    // limits apply with no further code change. Fully fail-open: if migration
+    // 0015 isn't applied, fetchIsPro/usageToday degrade to false/0.
+    const isPro = await fetchIsPro(serviceClient, user.id);
+    const ent = getEntitlements(isPro);
+    const meteredAction = isOracle ? "oracle_debate" : "debate_create";
+    if (ent.enforced) {
+        const used = await usageToday(serviceClient, user.id, meteredAction);
+        if (!isActionAllowed(ent, meteredAction, used)) {
+            return NextResponse.json(
+                {
+                    error: isOracle
+                        ? `Daily Oracle limit reached (${ent.limits.oracle_debate}/day).`
+                        : `Daily debate limit reached (${ent.limits.debate_create}/day). Try again later.`,
+                },
+                { status: 429 }
+            );
+        }
+    }
 
     // ── Rate limit: max N debates per rolling 24h ──
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -129,6 +154,10 @@ export async function POST(request: Request) {
         await serviceClient.from("topics").delete().eq("id", topicData.id);
         return NextResponse.json({ error: debateError.message }, { status: 500 });
     }
+
+    // Record usage AFTER a successful create (fail-open; never blocks the
+    // response). Powers the future paywall + analytics; no-op pre-0015.
+    await recordUsage(serviceClient, user.id, meteredAction);
 
     return NextResponse.json({ debate, topic: topicData });
 }

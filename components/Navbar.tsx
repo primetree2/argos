@@ -176,6 +176,28 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                         gap: "0.75rem",
                     }}
                 >
+                    {/* Live debates discovery link */}
+                    <Link
+                        href="/live"
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.4rem",
+                            fontFamily: "var(--font-cinzel), serif",
+                            fontSize: "0.65rem",
+                            letterSpacing: "0.14em",
+                            color: "var(--text-secondary)",
+                            textDecoration: "none",
+                            padding: "0.45rem 0.5rem",
+                            transition: "color 200ms ease",
+                        }}
+                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
+                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
+                    >
+                        <span className="nav-live-dot" aria-hidden="true" />
+                        LIVE
+                    </Link>
+
                     {/* Public debates feed link */}
                     <Link
                         href="/debates"

@@ -338,10 +338,23 @@ side is what realistically gets you to six figures.
     via the existing race-safe queue (`match_player_v2`, migration 0014, idempotent),
     plus a live `OnlinePresence` "N online" pill. Falls back to `match_player` if
     0014 isn't applied yet, so the app stays runnable.
-15. **NEXT (FREE):** Phase 5 plumbing — usage metering + an `is_pro` flag
-    (default everyone unlimited during beta) so a paywall is a later flag-flip;
-    and Phase 3 follow-ups (a "Live now" discovery surface listing active public
-    debates, hide blocked users from the feed). All FREE-tier; 💰 PAID deferred.
+15. ✅ **“Live now” discovery surface.** `/live` lists active + public debates
+    (existing tables only, no migration) with a pulsing `LIVE` nav link, so
+    spectators can find a match in progress and jump into the read-only room.
+16. ✅ **Phase 5 plumbing — usage metering + `is_pro` flag.** `migration 0015`
+    adds `users.is_pro` + a `daily_usage` counter (`record_usage`/`usage_today`).
+    `lib/billing/limits.ts` is the single source of truth (free vs Pro daily
+    limits + `getEntitlements`); `BETA_UNLIMITED=true` keeps everyone unlimited
+    so the paywall is a later one-line flip. `lib/billing/usage.ts` is fail-open
+    (no-op pre-0015) and is wired into `POST /api/debates`. No user-facing change.
+17. ✅ **Hide blocked users from the public feed.** `migration 0016` exposes
+    `player_a_id`/`player_b_id` on `public_debate_feed`; `/debates` filters out
+    debates involving anyone the viewer blocked or who blocked them (SQL-side,
+    pagination-accurate). Fail-open + runnable pre-0016.
+18. **NEXT (FREE):** remaining Phase 3 follow-ups — anonymous/logged-out
+    spectating + a cached public-feed first page. Then Phase 5: gate a Pro-only
+    nicety behind `is_pro` (still beta-open) to exercise the plumbing. All
+    FREE-tier; 💰 PAID deferred.
 
 > **Phase 3 (virality) progressing:** spectator mode ✅, Blitz mode ✅, audience voting ✅,
 > daily-topic leaderboard ✅; next are achievements/badges + replay.

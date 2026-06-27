@@ -582,8 +582,67 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://argos-indol.vercel.app/api/
 > best-effort ~5-min GitHub Actions ping of `/api/cron/maintenance`. Do not add
 > features that assume paid cron, paid Realtime, or any paid service.
 
-**Session:** Phase 4 — presence-based Quick Match (FREE)
+**Session:** Phase 3 follow-up — hide blocked users from the public feed (FREE)
 **Date:** 2026-06-27
+
+### This checkpoint
+- ✅ **Hide blocked users from the public feed.** Completes the deferred
+  follow-up from the block feature (migration 0007). The `/debates` page now
+  fetches the viewer's block set (either direction, from `user_blocks`) and
+  filters out any debate where either player is blocked — **in SQL**, so
+  pagination counts stay accurate. Logged-out viewers are unaffected.
+- ⚠️ **Run `supabase/migrations/0016_feed_player_ids.sql`** — recreates the
+  `public_debate_feed` view adding `player_a_id` / `player_b_id` (the keys to
+  filter on); all existing columns unchanged. DROP + CREATE, **idempotent /
+  safe to run twice.**
+- **Runnable before OR after 0016:** the block filter references the new id
+  columns and is only attempted when the viewer has blocks; if that query
+  errors (columns missing pre-0016) the page transparently falls back to the
+  unfiltered feed. A fresh query builder is used per attempt to avoid
+  PostgREST filter-builder mutation leaking across attempts.
+
+#### Prior checkpoint — Phase 5 plumbing (is_pro + usage metering, FREE)
+**Date:** 2026-06-27 (archived)
+
+### This checkpoint
+- ✅ **Monetization plumbing (Phase 5 FREE items 1-2) — NO user-facing change.**
+  Builds the paywall foundation so flipping it on later is a one-line change,
+  while charging NO ONE during beta. `lib/billing/limits.ts` is the single
+  source of truth: `BETA_UNLIMITED = true` keeps `getEntitlements().enforced`
+  false, so `isActionAllowed()` always returns true and nothing is blocked.
+  `FREE_LIMITS` mirror today's hard-coded caps (20 debates/day, 3 oracle/day)
+  so switching the paywall on never silently tightens current behaviour;
+  `PRO_LIMITS` are generous-but-bounded.
+- ✅ **Durable usage metering.** `lib/billing/usage.ts` wraps `record_usage()`
+  / `usage_today()` / the `is_pro` read — all **FAIL-OPEN**: if migration 0015
+  isn't applied yet, reads return 0, writes no-op, `fetchIsPro` returns false,
+  so the route behaves exactly as before via the existing caps. Wired into
+  `POST /api/debates`: an (inert-during-beta) entitlement check before create,
+  and `record_usage` after a successful create.
+- ⚠️ **Run `supabase/migrations/0015_pro_and_usage.sql`** — adds `users.is_pro`,
+  the `daily_usage` table, and `record_usage()` / `usage_today()`. **Idempotent
+  — safe to run twice.** App is fully runnable before OR after applying it.
+- Drizzle schema updated to match (`users.isPro`, `dailyUsage` table).
+
+#### Prior checkpoint — “Live now” discovery surface (Phase 3 follow-up, FREE)
+**Date:** 2026-06-27 (archived)
+
+### This checkpoint
+- ✅ **“Live now” discovery surface — NO migration, NO schema.** New `/live`
+  server page lists currently **active + public** debates so anyone can find
+  and spectate a match in progress. It reuses existing tables only — a single
+  PostgREST query on `debates` (`status='active'` AND `is_public=true`) that
+  embeds the topic + both players via the existing FK references — ordered by
+  `turn_started_at` desc, capped at 50. Each card shows the topic, category,
+  round X/Y, a ⚡ Blitz tag, both players + their FOR/AGAINST sides, and a
+  “Watch live” CTA linking to `/debate/[id]` (the read-only spectator view
+  already shipped). Empty state offers a “Start the next one” CTA.
+  `app/live/page.tsx` + `app/live/loading.tsx` (`OracleLoader`); a `LIVE` nav
+  link with a pulsing red dot was added to `Navbar` (before DEBATES) and the
+  `.nav-live-dot` keyframe to `globals.css`. Runnable as-is.
+
+#### Prior checkpoint — presence-based Quick Match (Phase 4, FREE)
+**Date:** 2026-06-27 (archived)
 
 ### This checkpoint
 - ✅ **Quick Match (instant Blitz pairing) + live online count.** Dashboard now
@@ -782,7 +841,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://argos-indol.vercel.app/api/
 8. ✅ Audience voting (Phase 3 item 2).
 9. ✅ Per-topic Daily Topic leaderboard (Phase 3 item 5).
 10. **NEXT — Phase 3:** achievements/titles/badges, then debate replay.
-11. Follow-ups: “Live now” discovery surface; anonymous spectating; cached public-feed first page; hide blocked users from the feed.
+11. Follow-ups: ✅ “Live now” discovery surface (`/live`); anonymous spectating; cached public-feed first page; hide blocked users from the feed.
 
 ---
 

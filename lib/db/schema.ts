@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, timestamp, jsonb, boolean, date, primaryKey } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
     id: uuid("id").primaryKey().defaultRandom(),
@@ -7,6 +7,9 @@ export const users = pgTable("users", {
     eloRating: integer("elo_rating").default(1200),
     debatesWon: integer("debates_won").default(0),
     debatesLost: integer("debates_lost").default(0),
+    // Phase 5 monetization plumbing (migration 0015). Inert during beta
+    // (lib/billing/limits.ts BETA_UNLIMITED keeps everyone unlimited).
+    isPro: boolean("is_pro").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -97,6 +100,18 @@ export const argumentReactions = pgTable("argument_reactions", {
     reactionType: text("reaction_type").notNull(), // strong | brutal | questionable
     createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Durable per-user / per-action / per-UTC-day usage counter (migration 0015).
+// Backs metered free-tier limits without Redis; written via record_usage()
+// and read via usage_today(). See lib/billing/limits.ts.
+export const dailyUsage = pgTable("daily_usage", {
+    userId: uuid("user_id").references(() => users.id).notNull(),
+    action: text("action").notNull(), // debate_create | oracle_debate | ranked_match
+    day: date("day").notNull(),
+    count: integer("count").notNull().default(0),
+}, (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.action, t.day] }),
+}));
 
 // Async scoring queue (migration 0009). One row per argument awaiting scoring;
 // drained by the maintenance cron via claim_scoring_jobs().
