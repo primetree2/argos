@@ -1,6 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { attemptMatch } from "@/lib/matchmaking";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { backfillIpHash, flagSybilDebate } from "@/lib/safety/fingerprint";
+
+// Rate limit: matchmaking attempts per user. The client polls GET every ~4s,
+// so 30/60s leaves comfortable headroom for legitimate use while throttling
+// scripted ranked-match spam (anti-Sybil leverage, ROADMAP Phase 1, items 5-6).
+const MM_LIMIT = 30;
+const MM_WINDOW_SECONDS = 60;
 
 // Ranked matchmaking queue (#6).
 //
@@ -14,12 +22,22 @@ import { attemptMatch } from "@/lib/matchmaking";
 //   <= 180s → 500 pts
 //   > 180s  → unlimited
 
-export async function POST() {
+export async function POST(request: Request) {
     const supabase = await createClient();
     const {
         data: { user },
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    if (!(await checkRateLimit(supabase, `mm:${user.id}`, MM_LIMIT, MM_WINDOW_SECONDS))) {
+        return NextResponse.json(
+            { error: "Too many matchmaking requests. Slow down a moment." },
+            { status: 429 }
+        );
+    }
+
+    // Anti-Sybil: record this user's hashed IP on first sight (no-op if set).
+    await backfillIpHash(supabase, user.id, request);
 
     const { data: profile } = await supabase
         .from("users")
@@ -47,15 +65,25 @@ export async function POST() {
     }
 
     const result = await attemptMatch(user.id);
+    if (result.matched && result.debateId) {
+        await flagSybilDebate(supabase, result.debateId);
+    }
     return NextResponse.json(result);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
     const supabase = await createClient();
     const {
         data: { user },
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    if (!(await checkRateLimit(supabase, `mm:${user.id}`, MM_LIMIT, MM_WINDOW_SECONDS))) {
+        return NextResponse.json(
+            { error: "Too many matchmaking requests. Slow down a moment." },
+            { status: 429 }
+        );
+    }
 
     // If someone already matched us, report it.
     const { data: row } = await supabase
@@ -71,6 +99,10 @@ export async function GET() {
 
     // Still waiting — re-attempt (band may have widened since we joined).
     const result = await attemptMatch(user.id);
+    if (result.matched && result.debateId) {
+        await backfillIpHash(supabase, user.id, request);
+        await flagSybilDebate(supabase, result.debateId);
+    }
     const waitedMs = row.joined_at ? Date.now() - new Date(row.joined_at).getTime() : 0;
     return NextResponse.json({ inQueue: true, waitedMs, ...result });
 }

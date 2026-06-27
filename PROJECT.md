@@ -182,6 +182,18 @@ CREATE TABLE argument_reactions (
   UNIQUE (argument_id, user_id)
 );
 
+-- vs Oracle AI mode (migration 0006). One fixed-UUID system user reused as
+-- player_b for every vs-AI debate. Referenced in code as ORACLE_USER_ID in
+-- lib/ai/oracle.ts. oracle_debates_today(user) caps vs-AI debates to 3/day.
+-- The Oracle is a normal row in `users` (id 00000000-0000-0000-0000-0000000000a1,
+-- username 'Oracle'); vs-AI debates are always mode = 'casual'.
+
+-- Trust & safety (migration 0007): tables `reports` and `user_blocks`, plus
+-- match_player() skips mutually-blocked users. Rate limiting + anti-Sybil
+-- (migration 0008): table `rate_limits` + check_rate_limit(), and nullable
+-- users.signup_ip_hash / debates.suspected_sybil. All applied; 0007/0008 app
+-- wiring is the next FREE roadmap work.
+
 -- Recommended indexes (not yet applied — run these)
 CREATE INDEX IF NOT EXISTS idx_debates_player_a ON debates(player_a_id);
 CREATE INDEX IF NOT EXISTS idx_debates_player_b ON debates(player_b_id);
@@ -242,8 +254,11 @@ argos/
 │   │   │   ├── auto-forfeit/route.ts     # GET: forfeit idle turns >11min (every 5min)
 │   │   │   └── daily-topic/route.ts      # GET: generate daily topic (00:00 UTC)
 │   │   ├── debates/
-│   │   │   ├── route.ts                  # POST: create debate
-│   │   │   └── [id]/route.ts             # GET: state, PATCH: join/update turn
+│   │   │   ├── route.ts                  # POST: create debate (opponentType:'ai' => vs Oracle)
+│   │   │   └── [id]/
+│   │   │       ├── route.ts              # GET: state, PATCH: join/update turn
+│   │   │       ├── argument/route.ts     # POST: submit argument (+ triggers Oracle turn)
+│   │   │       └── oracle-turn/route.ts  # POST: drive the Oracle's move (internal secret)
 │   │   ├── matchmaking/route.ts          # POST/GET/DELETE: ranked queue
 │   │   ├── notify-turn/route.ts          # POST: send turn email via Resend
 │   │   ├── og/route.tsx                  # GET: OG image for share cards
@@ -303,8 +318,9 @@ argos/
 ├── lib/
 │   ├── ai/
 │   │   ├── dailyTopic.ts                 # Gemini daily topic generator + fallback list
-│   │   ├── judge.ts                      # ONLY file importing Gemini SDK
-│   │   └── prompts.ts                    # Judge prompt template
+│   │   ├── judge.ts                      # Gemini SDK — scoring (the judge)
+│   │   ├── oracle.ts                     # Gemini SDK — arguing (vs Oracle AI mode) + ORACLE_USER_ID
+│   │   └── prompts.ts                    # Judge + Oracle argue prompt templates
 │   ├── db/
 │   │   └── schema.ts                     # Drizzle schema (all tables)
 │   ├── debates/
@@ -555,6 +571,87 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://argos-indol.vercel.app/api/
 ---
 
 ## 15. Current Status
+
+**Session:** ROADMAP Phase 1 — vs Oracle AI mode shipped
+**Date:** 2026-06-27
+
+### This checkpoint
+- ✅ **Daily Topic leaderboard (Phase 3 item 5).** `/daily` ranks players who completed a
+  debate on today's topic (total score, debates, wins), cached via `getDailyLeaderboard`
+  (120s, tag `daily-leaderboard`, invalidated on completion). Linked from the Daily Topic
+  banner. No migration.
+
+#### Earlier this session
+- ✅ **Audience voting (Phase 3 item 2).** `migration 0011` adds `spectator_votes`.
+  `/api/votes` (GET tallies + own votes; POST toggle/switch) blocks participants; the
+  `AudienceVote` widget shows a live Crowd split per round to spectators on
+  active/scoring/completed debates. **Run `supabase/migrations/0011_spectator_votes.sql`.**
+
+#### Earlier this session
+- ✅ **Blitz mode (Phase 3 item 3).** `migration 0010` adds `debates.blitz`. Speed selector
+  on the new-debate page; 90s client turn timer and a 120s auto-forfeit window for blitz
+  (vs 11 min standard). **Run `supabase/migrations/0010_blitz_mode.sql`.** Caveat: blitz
+  timeouts are bounded by the ~5-min GitHub Actions cron cadence (live play unaffected).
+
+#### Earlier this session
+- ✅ **Live spectator mode (Phase 3 item 1).** Non-participants view `/debate/[id]`
+  read-only (gated by `isMyTurn` + server participant check). `SpectatorPresence` adds a
+  live “N watching” count via a Realtime presence channel; a “Spectating” banner clarifies
+  the score columns.
+
+#### Earlier this session
+- ✅ **Read-path caching + pooling (Phase 2 items 2-3).** Leaderboard page-1 served from
+  `unstable_cache` (60s, tag `leaderboard`, invalidated on ranked Elo settle). Pooling is
+  N/A at runtime (PostgREST is pre-pooled); use the Supavisor string for `SUPABASE_DB_URL`
+  in drizzle-kit only. RLS enabled (no policies) on `scoring_jobs`.
+
+#### Earlier this session
+- ✅ **Async scoring queue (Phase 2 item 1).** `migration 0009` adds `scoring_jobs` +
+  `enqueue_scoring_job` / `claim_scoring_jobs` (FOR UPDATE SKIP LOCKED) / `complete_scoring_job`.
+  The argument + oracle-turn routes now enqueue and fire `/api/score` without awaiting, so
+  submit returns immediately. The maintenance cron drains the queue; the score route clears
+  the job on a terminal state. **Run `supabase/migrations/0009_scoring_jobs.sql` in Supabase.**
+
+#### Earlier this session
+- ✅ **Rate limiting + anti-Sybil (Phase 1 items 5-6).** `lib/rateLimit.ts` (wraps
+  `check_rate_limit`, 0008) throttles `/api/matchmaking` (30/60s) and `/api/score`
+  (60/60s, direct callers only). `lib/safety/fingerprint.ts` records a hashed signup IP
+  and flags same-IP debates via `flag_sybil_debate` (0008) on match + challenge accept.
+  **Phase 1 FREE track complete.**
+
+#### Earlier this session
+- ✅ **Safety: Gemini moderation pass + report/block.** `moderateWithOracle()` in
+  `lib/ai/judge.ts` (+ `buildModerationPrompt`) gates every human argument; `/api/reports`
+  and `/api/blocks` on the `0007` tables, with `ReportButton` (opponent arguments) and
+  `BlockButton` (profiles). Matchmaking block-exclusion was already live via `0007`.
+  Feed-level block hiding is deferred (needs the feed view to expose player ids).
+
+#### Earlier this session
+- ✅ **vs Oracle AI mode** — debate Gemini when no human is available. New
+  `lib/ai/oracle.ts` (`argueAsOracle`, `ORACLE_USER_ID`), `buildOraclePrompt`
+  in `prompts.ts`, `/api/debates/[id]/oracle-turn`, create-route
+  `opponentType:'ai'` support (capped 3/day via `oracle_debates_today`),
+  argument-route trigger, maintenance-cron Oracle backstop + forfeit skip, and
+  the Opponent toggle on the new-debate page.
+- ℹ️ Migrations `0006`–`0008` are applied and safe (idempotent). `0006` is now
+  consumed by vs-Oracle mode. `0007`/`0008` app wiring is the next FREE work.
+
+### Next FREE roadmap work (in order)
+1. ✅ Gemini safety-pass moderation + report/block UI on `reports`/`user_blocks` (0007).
+2. ✅ Rate-limit `/api/score` + `/api/matchmaking` via `check_rate_limit()` (0008).
+3. ✅ Anti-Sybil flagging on match/accept (0008).
+4. ✅ Async scoring via a Postgres `scoring_jobs` queue (0009).
+5. ✅ Leaderboard read-path caching + pooling note (Phase 2 items 2-3).
+6. ✅ Live spectator mode (Phase 3 item 1).
+7. ✅ Blitz mode (Phase 3 item 3).
+8. ✅ Audience voting (Phase 3 item 2).
+9. ✅ Per-topic Daily Topic leaderboard (Phase 3 item 5).
+10. **NEXT — Phase 3:** achievements/titles/badges, then debate replay.
+11. Follow-ups: “Live now” discovery surface; anonymous spectating; cached public-feed first page; hide blocked users from the feed.
+
+---
+
+#### Prior session (archived)
 
 **Session:** Phase 8 — Phase 1 + Phase 2 features built
 **Date:** 2026-06-13

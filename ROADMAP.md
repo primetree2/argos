@@ -26,6 +26,13 @@
 - **Paid services currently in use:** *none beyond Gemini.* Everything else (Supabase,
   Vercel, Resend, Sentry, Posthog, GitHub Actions) is on a **free tier**. Every "FREE"
   task below is designed to stay inside those free tiers.
+- **Migrations `0006`–`0008` status:** these are **applied and safe to keep** (and
+  idempotent — safe to re-run). `0006` seeds the Oracle system user + `oracle_debates_today()`
+  (now used by vs-Oracle mode). `0007` adds `reports` + `user_blocks` and makes
+  matchmaking skip mutually-blocked users (no behaviour change until a block exists).
+  `0008` adds `rate_limits` + `check_rate_limit()` and soft anti-Sybil flagging columns
+  (additive, unused until wired). The app code that consumes `0007`/`0008` is the next
+  FREE work (Phase 1 items 3–6).
 
 ---
 
@@ -94,29 +101,41 @@ forward only when money is available.
 > highest-leverage work and is almost entirely free.
 
 ### 🟢 FREE
-1. **Apply the DB indexes.** Run the `CREATE INDEX` statements from `PROJECT.md` §5
-   (`idx_debates_player_a`, `idx_debates_player_b`, `idx_debates_status`,
-   `idx_arguments_debate`, `idx_users_elo`). Verify each exists in Supabase. *Cost: 0.*
-2. **vs Oracle AI mode (cold-start killer).** Let a user debate Gemini itself when no
-   human opponent is available. Gemini plays the opposing side; the same judge scores both.
-   - Add a debate `mode` value or an `opponent_type` flag (`human` | `ai`).
-   - Reuse `lib/ai/` — add an `argueAsOracle(topic, side, history)` function alongside
-     `scoreArgument`. Keep it isolated like the judge.
-   - This removes the "no opponent" dead-end entirely. **Single biggest free growth unlock.**
-   - Note: doubles Gemini calls per debate (AI argues + AI judges). Gate AI debates per
-     user per day to protect free Gemini quota (e.g. 3/day for non-Pro).
-3. **Stronger moderation, still free.** Replace the 6-word regex with **Gemini's own
-   safety / a dedicated moderation prompt** (you already have a Gemini key). Add a second
-   cheap Gemini call (or reuse the judge response) that returns a safety verdict before an
-   argument is accepted. *Cost: marginal Gemini usage, still free tier.*
-4. **Report / block / mute (DB + UI).** Add a `reports` table and a `user_blocks` table.
-   Add a "Report" button on arguments and a "Block" action on profiles. Hide blocked users
-   from matchmaking and feed. *Cost: 0.*
-5. **Basic anti-Sybil.** At minimum: rate-limit ranked matchmaking per user, and flag
-   debates where both players share a signup IP / device fingerprint (store a hashed
-   fingerprint on the user row). Don't ban automatically yet — just flag for review. *Cost: 0.*
-6. **Rate limit scoring & matchmaking endpoints.** Add the same DB-backed rolling-window
-   guard used in `app/api/debates/route.ts` to `/api/score` and `/api/matchmaking`. *Cost: 0.*
+1. **Apply the DB indexes.** ✅ Applied (`supabase/migrations/0005_indexes.sql`):
+   `idx_debates_player_a`, `idx_debates_player_b`, `idx_debates_status`,
+   `idx_arguments_debate`, `idx_users_elo`. *Cost: 0.*
+2. **vs Oracle AI mode (cold-start killer).** ✅ DONE. A user can debate Gemini
+   when no human opponent is available; Gemini plays the opposing side and the
+   same neutral judge scores both.
+   - `opponentType: "ai"` on `POST /api/debates` creates an ACTIVE debate with
+     the seeded Oracle system user (`00000000-0000-0000-0000-0000000000a1`,
+     migration `0006`) as `player_b`. vs-AI debates are casual (no Elo).
+   - The argue layer is isolated in `lib/ai/oracle.ts` (`argueAsOracle`), mirroring
+     the judge isolation rule. The Oracle moves via `/api/debates/[id]/oracle-turn`
+     (trusted internal call) and submits through the same `submit_argument` SQL
+     function humans use; the maintenance cron is the free backstop.
+   - Gated to **3 vs-Oracle debates/user/day** via `oracle_debates_today()`
+     (migration `0006`) to protect the Gemini free tier.
+3. **Stronger moderation, still free.** ✅ DONE. `moderateWithOracle()` in `lib/ai/judge.ts`
+   runs a Gemini safety-classification pass (hate / harassment / sexual-minors / doxxing /
+   spam) on every human argument AFTER the cheap regex/length gate and BEFORE any write
+   (`app/api/debates/[id]/argument/route.ts`). FAIL-OPEN: a Gemini error never blocks a
+   legitimate user; the regex/length filter stays the always-on gate. *Cost: marginal Gemini.*
+4. **Report / block / mute (DB + UI).** ✅ DONE (tables from migration `0007`). `/api/reports`
+   + a Report button on opponents' arguments; `/api/blocks` (GET/POST/DELETE) + a Block button
+   on profiles. Matchmaking already excludes mutually-blocked users (`match_player`, `0007`).
+   *Remaining:* hiding blocked users from the public **feed** is deferred — it needs the
+   `public_debate_feed` view to expose player ids; tracked as a follow-up. *Cost: 0.*
+5. **Basic anti-Sybil.** ✅ DONE. `lib/safety/fingerprint.ts` stores a one-way hashed IP on
+   the user row (`backfillIpHash`, first-sight only) and flags debates where both players
+   share that hash via `flag_sybil_debate()` (migration `0008`) on matchmaking + challenge
+   accept. SOFT SIGNAL ONLY — sets `debates.suspected_sybil` for review, never auto-bans.
+   Ranked matchmaking is also rate-limited (item 6). *Cost: 0.*
+6. **Rate limit scoring & matchmaking endpoints.** ✅ DONE. `lib/rateLimit.ts` wraps the
+   `check_rate_limit()` SQL function (migration `0008`). `/api/matchmaking` POST+GET capped
+   at 30/60s/user; `/api/score` capped at 60/60s/user for direct (browser self-heal) callers
+   — trusted internal calls (argument route, oracle-turn, maintenance) are exempt. Fail-open
+   on DB error so a throttle fault never locks users out. *Cost: 0.*
 7. **Refactor `DebateRoom.tsx`** into hooks (`useDebateRealtime`, `useTurnTimer`,
    `useArgumentSubmit`) + sub-components. Pure maintainability; do it before adding
    spectator/live features on top. *Cost: 0.*
@@ -133,23 +152,26 @@ forward only when money is available.
 > real platform."
 
 ### 🟢 FREE
-1. **Decouple scoring from the request path.** Today `app/api/debates/[id]/argument/route.ts`
-   awaits `/api/score`. Change it to: insert the argument (status `pending`), return
-   **immediately**, and let scoring happen out-of-band. The UI already understands
-   `scoring_status: pending`.
-   - **Free queue option A (recommended):** a Postgres-backed queue. Insert a row into a
-     `scoring_jobs` table; have the existing every-5-min GitHub Actions maintenance cron
-     drain it (plus the existing client self-heal retry). No new paid service.
-   - **Free queue option B:** **Supabase Edge Functions + `pg_cron`** (Supabase free tier
-     includes both) to process the queue every minute. More real-time than GitHub Actions.
-   - Keep the synchronous path as a fast-path fallback for low load if you want, but the
-     default must be async.
-2. **Add Supabase connection pooling.** Use the **Supavisor / pgBouncer** pooled connection
-   string (free, built into Supabase) for all server routes. Connection exhaustion is the
-   classic Postgres failure under concurrency. *Cost: 0.*
-3. **Cache the hot read paths.** Leaderboard and public feed should use Next.js ISR /
-   `revalidate` or edge caching instead of hitting Postgres on every view. Paginate the
-   leaderboard and feed (noted as debt in `PROJECT.md` §11). *Cost: 0.*
+1. **Decouple scoring from the request path.** ✅ DONE (option A — Postgres queue).
+   `app/api/debates/[id]/argument/route.ts` no longer awaits `/api/score`: it inserts the
+   argument as `pending`, enqueues a durable `scoring_jobs` row (`migration 0009`), fires the
+   score call **fire-and-forget**, and returns immediately. The maintenance cron drains the
+   queue via `claim_scoring_jobs()` (`FOR UPDATE SKIP LOCKED`, re-claims stale jobs); the
+   score route deletes the job on a terminal state. The old stuck-argument scan + client
+   self-heal remain as secondary safety nets. The vs-Oracle path uses the same async flow.
+   *Cost: 0.*
+   - **⚠️ Run `supabase/migrations/0009_scoring_jobs.sql` in Supabase** (idempotent, safe to re-run).
+2. **Add Supabase connection pooling.** ✅ N/A at runtime + documented. Argos's runtime
+   queries all go through `@supabase/supabase-js` / `@supabase/ssr` over **PostgREST**, which
+   is already pooled server-side by Supabase — there is no app-side connection pool to
+   exhaust. The only direct-Postgres consumer is **drizzle-kit at migration time**; point its
+   `SUPABASE_DB_URL` at the **Supavisor pooled** connection string (port 6543) in Supabase
+   → Settings → Database. No code change needed. *Cost: 0.*
+3. **Cache the hot read paths.** ✅ DONE (leaderboard). The leaderboard first page (where
+   ~all traffic lands) is served from `unstable_cache` (60s revalidate, tag `leaderboard`),
+   invalidated immediately when a ranked Elo settles (`finalizeIfComplete`). Both the
+   leaderboard and public feed were already paginated in SQL. *Remaining:* the public feed
+   already uses `force-dynamic`; a cached first-page variant is a cheap follow-up. *Cost: 0.*
 4. **Gemini cost controls.** Cache identical/very-short arguments, batch where possible,
    and meter free users. Keep `gemini-flash-lite` as the judge. *Cost: 0.*
 
@@ -168,20 +190,37 @@ forward only when money is available.
 > Goal: turn debates into a spectacle people watch and share. This is where growth compounds.
 
 ### 🟢 FREE
-1. **Live spectator mode.** Let anyone watch an in-progress debate read-only via Supabase
-   Realtime (you already broadcast `debates` + `arguments`). Add a `/debate/[id]` spectator
-   view that hides the input box for non-participants and shows a live viewer count
-   (Realtime presence). *Cost: 0 within free Realtime limits.*
-2. **Audience voting alongside the AI.** Spectators vote per round; show "Crowd 73% /
+1. **Live spectator mode.** ✅ DONE. Any logged-in non-participant watches `/debate/[id]`
+   read-only — input/resign controls are gated by `isMyTurn` (always false for a spectator)
+   and the server re-checks participation, so it is read-only on both sides. A “Spectating”
+   banner clarifies the You/Opp. columns, and `SpectatorPresence` shows a live “N watching”
+   count via a Supabase Realtime **presence** channel; argument/score updates arrive via the
+   existing `debates`/`arguments` broadcast. *Cost: 0 within free Realtime limits.*
+   *(Follow-up: a “Live now” discovery surface + optional anonymous/logged-out spectating.)*
+2. **Audience voting alongside the AI.** ✅ DONE (`migration 0011` → `spectator_votes`).
+   Spectators vote per round for Player A / Player B; the `AudienceVote` widget shows a live
+   “Crowd 73% / 27%” split + vote count next to the Oracle's verdict. `/api/votes` enforces
+   one vote per (debate, user, round), toggle/switch, and blocks participants from voting.
+   **⚠️ Run `supabase/migrations/0011_spectator_votes.sql`** (idempotent). *Cost: 0.*
+   <!-- legacy line retained below for context -->
+   _Originally:_ Spectators vote per round; show "Crowd 73% /
    Oracle P1". Store in a `spectator_votes` table. Huge engagement multiplier. *Cost: 0.*
-3. **Blitz mode.** A debate mode with 60–90s turns instead of 10 min. This is your
-   instant-dopamine / Omegle-style fast loop. Pairs perfectly with presence matchmaking
-   (Phase 4). *Cost: 0.*
+3. **Blitz mode.** ✅ DONE. A `blitz` flag on debates (`migration 0010`) runs **90s turns**
+   instead of 10 min. The new-debate page has a Speed selector (Standard / ⚡ Blitz); the
+   DebateRoom timer + the auto-forfeit window both honour it (90s + 30s grace = 120s). Pairs
+   perfectly with presence matchmaking (Phase 4). *Cost: 0.*
+   - **⚠️ Run `supabase/migrations/0010_blitz_mode.sql`** (idempotent, safe to re-run).
+   - *Caveat:* the free GitHub Actions maintenance cron runs ~every 5 min, so a Blitz
+     timeout is only auto-forfeited at that cadence. Live play is unaffected (the client
+     timer + normal submit flow drive the debate); only an abandoned blitz turn waits for
+     the next cron tick. A faster trigger comes with Vercel Pro cron (Phase 2 PAID).
 4. **Better viral share artifact.** You already generate an OG image (`/api/og`). Add a
    "debate recap" share card that highlights the score reveal + the best fallacy call-out.
    (Animated video clips are a PAID/later item — static first.) *Cost: 0.*
-5. **Daily Topic global leaderboard.** You have the daily topic; add a per-topic leaderboard
-   so there's a recurring reason to return and something to brag about. *Cost: 0.*
+5. **Daily Topic global leaderboard.** ✅ DONE. `/daily` ranks everyone who completed a
+   debate on today's Daily Topic by total argument score (with debates + wins), cached
+   (`lib/cache/dailyLeaderboard.ts`, 120s, tag `daily-leaderboard`, invalidated on any
+   debate completion). Linked from the Daily Topic banner. No migration. *Cost: 0.*
 6. **Achievements / titles / badges** (`#9` in `PROJECT.md`) — Elo milestones + fallacy-free
    streaks on the profile. Cheap retention + share fuel. *Cost: 0.*
 7. **Debate replay** (`#10`) — `/debate/[id]/replay` timeline view that scroll-animates the
@@ -260,9 +299,22 @@ side is what realistically gets you to six figures.
 ## 9. Suggested execution order (TL;DR for the next agent)
 
 **Do these FREE items, in this order:**
-1. Apply DB indexes (Phase 1).
-2. Ship **vs Oracle AI mode** (Phase 1) — kills cold-start. *Highest growth-per-effort.*
-3. Upgrade moderation to a Gemini safety pass + add report/block (Phase 1) — safety gate before any public growth push.
+1. ✅ Apply DB indexes (Phase 1) — done (`0005`).
+2. ✅ Ship **vs Oracle AI mode** (Phase 1) — done. Kills cold-start.
+3. ✅ Upgrade moderation to a Gemini safety pass + wire report/block on top of the
+   `reports`/`user_blocks` tables created by `0007` (Phase 1) — done.
+4. ✅ Rate-limit `/api/score` + `/api/matchmaking` via `check_rate_limit()` (`0008`) + anti-Sybil flagging (`0008`) — done.
+5. ✅ Decouple scoring from the request path — Postgres `scoring_jobs` queue drained by the maintenance cron (Phase 2 item 1). Done.
+6. ✅ Connection pooling (N/A at runtime; documented for drizzle-kit) + leaderboard read-path caching (Phase 2 items 2-3).
+7. ✅ Live spectator mode (Phase 3 item 1) — done.
+8. ✅ Blitz mode (Phase 3 item 3) — done.
+9. ✅ Audience voting (Phase 3 item 2) — done.
+10. ✅ Per-topic Daily Topic leaderboard (Phase 3 item 5) — done.
+11. **NEXT (Phase 3):** Achievements / titles / badges (Elo milestones + fallacy-free
+    streaks on the profile), then debate replay. After that: Phase 4 presence-based Quick Match.
+
+> **Phase 3 (virality) progressing:** spectator mode ✅, Blitz mode ✅, audience voting ✅,
+> daily-topic leaderboard ✅; next are achievements/badges + replay.
 4. Make scoring **async** via a Postgres `scoring_jobs` queue drained by the existing cron (Phase 2) — *highest scaling-per-effort.*
 5. Add Supavisor pooling + cache/paginate leaderboard & feed (Phase 2).
 6. Ship **live spectator mode + audience voting + Blitz mode** (Phase 3) — virality.

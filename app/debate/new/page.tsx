@@ -16,7 +16,9 @@ const SAMPLE_TOPICS = [
 export default function NewDebatePage() {
     const router = useRouter();
     const [topic, setTopic] = useState("");
+    const [opponent, setOpponent] = useState<"human" | "ai">("human");
     const [mode, setMode] = useState<"casual" | "ranked">("casual");
+    const [blitz, setBlitz] = useState(false);
     const [rounds, setRounds] = useState(3);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -42,7 +44,14 @@ export default function NewDebatePage() {
             const res = await fetch("/api/debates", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ topic, mode, totalRounds: rounds }),
+                body: JSON.stringify({
+                    topic,
+                    // vs-Oracle is always casual; the server enforces this too.
+                    mode: opponent === "ai" ? "casual" : mode,
+                    totalRounds: rounds,
+                    opponentType: opponent === "ai" ? "ai" : "human",
+                    blitz,
+                }),
             });
 
             const data = await res.json();
@@ -139,10 +148,54 @@ export default function NewDebatePage() {
                     </div>
                 </div>
 
-                {/* ── Mode ── */}
+                {/* ── Opponent ── */}
                 <div className="reveal-3" style={{ marginBottom: "1.75rem" }}>
                     <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "0.7rem" }}>
-                        Mode
+                        Opponent
+                    </label>
+                    <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        {(["human", "ai"] as const).map((o) => {
+                            const active = opponent === o;
+                            const isAi = o === "ai";
+                            return (
+                                <button
+                                    key={o}
+                                    onClick={() => setOpponent(o)}
+                                    style={{
+                                        background: active ? (isAi ? "rgba(0,255,224,0.06)" : "var(--gold-glow)") : "var(--bg-surface)",
+                                        border: `1px solid ${active ? (isAi ? "var(--teal-border)" : "var(--gold-border-hover)") : "var(--border-default)"}`,
+                                        borderTop: active ? `2px solid ${isAi ? "var(--teal)" : "var(--gold)"}` : "2px solid transparent",
+                                        borderRadius: "var(--radius-lg)",
+                                        padding: "1.25rem",
+                                        textAlign: "left",
+                                        cursor: "pointer",
+                                        transition: "all 200ms ease",
+                                        boxShadow: active ? (isAi ? "var(--shadow-teal)" : "var(--shadow-gold-sm)") : "none",
+                                    }}
+                                >
+                                    <p style={{
+                                        fontFamily: "var(--font-cinzel), serif",
+                                        fontSize: "0.82rem",
+                                        fontWeight: 600,
+                                        letterSpacing: "0.08em",
+                                        color: active ? (isAi ? "var(--teal)" : "var(--text-gold)") : "var(--text-primary)",
+                                        marginBottom: "0.35rem",
+                                    }}>
+                                        {o === "human" ? "Human" : "The Oracle"}
+                                    </p>
+                                    <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                                        {o === "human" ? "Invite or match a real opponent." : "Debate the AI now. No waiting. Casual only."}
+                                    </p>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* ── Mode ── */}
+                <div className="reveal-3" style={{ marginBottom: "1.75rem", opacity: opponent === "ai" ? 0.45 : 1, pointerEvents: opponent === "ai" ? "none" : "auto" }}>
+                    <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "0.7rem" }}>
+                        Mode {opponent === "ai" && <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.55rem", color: "var(--text-tertiary)" }}>— vs Oracle is always casual</span>}
                     </label>
                     <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                         {(["casual", "ranked"] as const).map((m) => {
@@ -177,6 +230,49 @@ export default function NewDebatePage() {
                                     </p>
                                     <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
                                         {m === "casual" ? "No Elo changes. Stakes are low." : "Elo rating affected. Glory or ruin."}
+                                    </p>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* ── Speed ── */}
+                <div className="reveal-4" style={{ marginBottom: "1.75rem" }}>
+                    <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "0.7rem" }}>
+                        Speed
+                    </label>
+                    <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        {([false, true] as const).map((b) => {
+                            const active = blitz === b;
+                            return (
+                                <button
+                                    key={String(b)}
+                                    onClick={() => setBlitz(b)}
+                                    style={{
+                                        background: active ? (b ? "rgba(0,255,224,0.06)" : "var(--gold-glow)") : "var(--bg-surface)",
+                                        border: `1px solid ${active ? (b ? "var(--teal-border)" : "var(--gold-border-hover)") : "var(--border-default)"}`,
+                                        borderTop: active ? `2px solid ${b ? "var(--teal)" : "var(--gold)"}` : "2px solid transparent",
+                                        borderRadius: "var(--radius-lg)",
+                                        padding: "1.25rem",
+                                        textAlign: "left",
+                                        cursor: "pointer",
+                                        transition: "all 200ms ease",
+                                        boxShadow: active ? (b ? "var(--shadow-teal)" : "var(--shadow-gold-sm)") : "none",
+                                    }}
+                                >
+                                    <p style={{
+                                        fontFamily: "var(--font-cinzel), serif",
+                                        fontSize: "0.82rem",
+                                        fontWeight: 600,
+                                        letterSpacing: "0.08em",
+                                        color: active ? (b ? "var(--teal)" : "var(--text-gold)") : "var(--text-primary)",
+                                        marginBottom: "0.35rem",
+                                    }}>
+                                        {b ? "⚡ Blitz" : "Standard"}
+                                    </p>
+                                    <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                                        {b ? "90 seconds per turn. Think fast." : "10 minutes per turn. Craft your case."}
                                     </p>
                                 </button>
                             );
