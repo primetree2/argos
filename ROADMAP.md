@@ -4,7 +4,7 @@
 > It is written so that **any AI agent or developer** can pick it up cold, understand the
 > current state, and continue the work without re-analyzing the whole codebase.
 >
-> `PROJECT.md` describes how things were *built* (and is partly stale — see note below).
+> `PROJECT.md` file describes how things were *built* (and is partly stale — see note below).
 > This file describes what to build *next* and *why*, split into phases, and split into
 > **what you can do for free right now** vs **what needs money later**.
 >
