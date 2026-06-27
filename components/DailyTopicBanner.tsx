@@ -8,6 +8,7 @@ export function DailyTopicBanner({ topic }: { topic: DailyTopic | null }) {
     const href = `/debate/new?topic=${encodeURIComponent(topic.title)}`;
 
     return (
+        <div>
         <Link href={href} style={{ textDecoration: "none" }}>
             <div
                 className="glass-card glass-card-gold daily-topic-card"
@@ -36,5 +37,14 @@ export function DailyTopicBanner({ topic }: { topic: DailyTopic | null }) {
                 </span>
             </div>
         </Link>
+        <div style={{ marginTop: "0.6rem", textAlign: "right" }}>
+            <Link
+                href="/daily"
+                style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.12em", color: "var(--text-teal)", textDecoration: "none" }}
+            >
+                See today’s leaderboard →
+            </Link>
+        </div>
+        </div>
     );
 }

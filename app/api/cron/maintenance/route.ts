@@ -1,6 +1,7 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { forfeitDebate } from "@/lib/debates/forfeit";
+import { ORACLE_USER_ID } from "@/lib/ai/oracle";
 
 // Combined maintenance cron.
 //
@@ -26,8 +27,10 @@ const serviceClient = createServiceClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// 10-minute turn + 1-minute grace = 11 minutes.
+// 10-minute turn + 1-minute grace = 11 minutes (standard debates).
 const TURN_TIMEOUT_MS = 11 * 60 * 1000;
+// Blitz: 90s turn + 30s grace = 120s. (ROADMAP Phase 3 item 3.)
+const BLITZ_TIMEOUT_MS = 120 * 1000;
 // Arguments stuck in pending/scoring longer than this are considered dropped
 // and re-driven through the score endpoint.
 const STUCK_SCORING_MS = 2 * 60 * 1000;
@@ -44,24 +47,36 @@ function isAuthorized(request: Request): boolean {
 
 // ── Step 1: auto-forfeit idle turns ────────────────────────────────────
 async function runAutoForfeit(): Promise<{ forfeited: string[]; error?: string }> {
-    const cutoff = new Date(Date.now() - TURN_TIMEOUT_MS).toISOString();
+    // Query against the SMALLER (blitz) cutoff so blitz debates are visible,
+    // then apply each debate's own threshold below. Standard debates keep the
+    // full 11-minute window.
+    const wideCutoff = new Date(Date.now() - BLITZ_TIMEOUT_MS).toISOString();
 
     const { data: stale, error } = await serviceClient
         .from("debates")
         .select(
-            "id, player_a_id, player_b_id, current_turn, current_round, total_rounds, status, turn_started_at"
+            "id, player_a_id, player_b_id, current_turn, current_round, total_rounds, status, turn_started_at, blitz"
         )
         .eq("status", "active")
         .not("turn_started_at", "is", null)
-        .lt("turn_started_at", cutoff);
+        .lt("turn_started_at", wideCutoff);
 
     if (error) return { forfeited: [], error: error.message };
 
     const processed: string[] = [];
+    const now = Date.now();
 
     for (const d of stale ?? []) {
+        // Apply the per-debate timeout: blitz forfeits at 120s, standard at 11m.
+        const timeoutMs = d.blitz ? BLITZ_TIMEOUT_MS : TURN_TIMEOUT_MS;
+        const startedMs = d.turn_started_at ? new Date(d.turn_started_at).getTime() : now;
+        if (now - startedMs < timeoutMs) continue;
+
         const inactiveId = d.current_turn;
         if (!inactiveId || !d.player_b_id) continue;
+        // Never forfeit the Oracle's turn — a transient Gemini outage shouldn't
+        // cost it a turn. The Oracle-turn driver (step below) retries instead.
+        if (inactiveId === ORACLE_USER_ID) continue;
         const opponentId =
             d.player_a_id === inactiveId ? d.player_b_id : d.player_a_id;
         if (!opponentId) continue;
@@ -138,6 +153,42 @@ async function runAutoForfeit(): Promise<{ forfeited: string[]; error?: string }
 // is the free, cron-side backstop for a dropped scoring trigger (e.g. a mobile
 // session that couldn't authenticate the original call). The score endpoint is
 // idempotent and 'already scored' returns 200, so re-driving is always safe.
+// Primary async-scoring path (ROADMAP Phase 2). claim_scoring_jobs() atomically
+// claims a batch (FOR UPDATE SKIP LOCKED, also re-claiming jobs stuck in
+// 'claimed') so concurrent cron runs never double-process. We drive /api/score
+// for each; the score route deletes the job on a terminal state. Idempotent.
+async function runDrainScoringQueue(origin: string): Promise<{ drained: string[] }> {
+    const secret = process.env.CRON_SECRET ?? "";
+    const { data: jobs, error } = await serviceClient.rpc("claim_scoring_jobs", {
+        p_limit: 25,
+        p_stale_seconds: 120,
+    });
+
+    if (error) {
+        console.error("claim_scoring_jobs error:", error.message);
+        return { drained: [] };
+    }
+
+    const drained: string[] = [];
+    for (const j of (jobs ?? []) as { argument_id: string; user_id: string | null }[]) {
+        try {
+            await fetch(`${origin}/api/score`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": secret,
+                },
+                body: JSON.stringify({ argumentId: j.argument_id, userId: j.user_id }),
+            });
+            drained.push(j.argument_id);
+        } catch (e) {
+            console.error("Drain scoring job error:", e);
+        }
+    }
+
+    return { drained };
+}
+
 async function runRequeueScoring(origin: string): Promise<{ requeued: string[] }> {
     const cutoff = new Date(Date.now() - STUCK_SCORING_MS).toISOString();
 
@@ -167,6 +218,39 @@ async function runRequeueScoring(origin: string): Promise<{ requeued: string[] }
     }
 
     return { requeued };
+}
+
+// ── Step 2b: drive stranded Oracle turns ─────────────────────────────
+// Free backstop for a dropped Oracle trigger: any active vs-Oracle debate
+// currently on the Oracle's turn is re-driven. The oracle-turn route is
+// idempotent (submit_argument rejects a duplicate round), so this is safe.
+async function runDriveOracleTurns(origin: string): Promise<{ driven: string[] }> {
+    const { data: pending } = await serviceClient
+        .from("debates")
+        .select("id")
+        .eq("status", "active")
+        .eq("player_b_id", ORACLE_USER_ID)
+        .eq("current_turn", ORACLE_USER_ID);
+
+    const driven: string[] = [];
+    const secret = process.env.CRON_SECRET ?? "";
+
+    for (const d of pending ?? []) {
+        try {
+            await fetch(`${origin}/api/debates/${d.id}/oracle-turn`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": secret,
+                },
+            });
+            driven.push(d.id);
+        } catch (e) {
+            console.error("Drive oracle turn error:", e);
+        }
+    }
+
+    return { driven };
 }
 
 // ── Step 3 & 4: cleanup waiting debates + resolve ghost active debates ─────
@@ -231,6 +315,8 @@ export async function GET(request: Request) {
     const origin = new URL(request.url).origin;
 
     const forfeit = await runAutoForfeit();
+    const oracle = await runDriveOracleTurns(origin);
+    const drain = await runDrainScoringQueue(origin);
     const requeue = await runRequeueScoring(origin);
     const cleanup = await runCleanup();
 
@@ -239,6 +325,14 @@ export async function GET(request: Request) {
             forfeited: forfeit.forfeited.length,
             debateIds: forfeit.forfeited,
             error: forfeit.error,
+        },
+        oracleTurns: {
+            driven: oracle.driven.length,
+            debateIds: oracle.driven,
+        },
+        scoringQueue: {
+            drained: drain.drained.length,
+            argumentIds: drain.drained,
         },
         requeueScoring: {
             requeued: requeue.requeued.length,

@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 import { moderateContent, MIN_WORDS, wordCount as countWords } from "@/lib/moderation";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { ArgumentReactions } from "./ArgumentReactions";
+import { ReportButton } from "@/components/safety/ReportButton";
+import { SpectatorPresence } from "./SpectatorPresence";
+import { AudienceVote } from "./AudienceVote";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
 
@@ -36,9 +39,15 @@ interface Debate {
     winner_id: string | null;
     total_rounds: number;
     current_round: number;
+    blitz?: boolean | null;
     topics: { title: string; category: string | null };
     arguments: Argument[];
 }
+
+// Turn length: Blitz debates run short 90s turns (ROADMAP Phase 3 item 3);
+// standard debates keep the 10-minute turn.
+const BLITZ_TURN_SECONDS = 90;
+const STANDARD_TURN_SECONDS = 600;
 
 export function DebateRoom({
     debate: initialDebate,
@@ -52,7 +61,8 @@ export function DebateRoom({
     const [debate, setDebate] = useState(initialDebate);
     const [argument, setArgument] = useState("");
     const [submitting, setSubmitting] = useState(false);
-    const [timeLeft, setTimeLeft] = useState(600);
+    const turnSeconds = initialDebate.blitz ? BLITZ_TURN_SECONDS : STANDARD_TURN_SECONDS;
+    const [timeLeft, setTimeLeft] = useState(turnSeconds);
     const [error, setError] = useState("");
     const [copied, setCopied] = useState(false);
     const [resigning, setResigning] = useState(false);
@@ -139,6 +149,13 @@ export function DebateRoom({
 
     const isPlayerA = debate.player_a_id === currentUserId;
     const isMyTurn = debate.current_turn === currentUserId;
+    // Spectator: a viewer who is neither player. The input box is already gated
+    // by isMyTurn (always false here), so spectators get a read-only view; this
+    // flag drives the explicit "watching" banner + presence pill.
+    const isSpectator =
+        debate.player_a_id !== currentUserId && debate.player_b_id !== currentUserId;
+    // Stable per-session key for presence so one viewer isn't double-counted.
+    const viewerKey = currentUserId;
     const mySide = isPlayerA
         ? debate.player_a_side
         : debate.player_a_side === "FOR"
@@ -234,7 +251,7 @@ export function DebateRoom({
     // ── Timer ── (reacts to turn, round AND status changes)
     useEffect(() => {
         if (!isMyTurn || debate.status !== "active") return;
-        setTimeLeft(600);
+        setTimeLeft(turnSeconds);
         timerRef.current = setInterval(() => {
             setTimeLeft((t) => { if (t <= 1) { clearInterval(timerRef.current!); return 0; } return t - 1; });
         }, 1000);
@@ -362,7 +379,7 @@ export function DebateRoom({
                 <div style={{ maxWidth: "780px", margin: "0 auto", padding: "0.875rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }} className="debate-header-row">
                     <div style={{ minWidth: 0 }}>
                         <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: "0.3rem" }}>
-                            {debate.mode.toUpperCase()} · Round {debate.current_round}/{debate.total_rounds}
+                            {debate.mode.toUpperCase()}{debate.blitz ? " · ⚡ BLITZ" : ""} · Round {debate.current_round}/{debate.total_rounds}
                         </p>
                         <h1 style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "clamp(0.85rem, 2.5vw, 1.05rem)", fontWeight: 600, letterSpacing: "0.03em", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             {debate.topics.title}
@@ -387,12 +404,45 @@ export function DebateRoom({
                                 />
                             ))}
                         </div>
-                        <span className={mySide === "FOR" ? "badge-for" : "badge-against"}>
-                            {mySide}
-                        </span>
+                        {!isSpectator && (
+                            <span className={mySide === "FOR" ? "badge-for" : "badge-against"}>
+                                {mySide}
+                            </span>
+                        )}
+                        {/* Live viewer count for in-progress/just-finished debates. */}
+                        {(debate.status === "active" || debate.status === "scoring") && (
+                            <SpectatorPresence debateId={debate.id} viewerKey={viewerKey} />
+                        )}
                     </div>
                 </div>
             </div>
+
+            {/* ── Spectator banner ── */}
+            {isSpectator && (
+                <div style={{ borderBottom: "1px solid var(--teal-border)", background: "var(--teal-glow)" }}>
+                    <div style={{ maxWidth: "780px", margin: "0 auto", padding: "0.6rem 1.5rem", display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.18em", color: "var(--text-teal)", textTransform: "uppercase" }}>
+                            ◆ Spectating
+                        </span>
+                        <span style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                            You are watching this debate. “You” = Player A, “Opp.” = Player B.
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Audience voting (spectators only) ── */}
+            {isSpectator &&
+                (debate.status === "active" || debate.status === "scoring" || debate.status === "completed") && (
+                    <div style={{ maxWidth: "780px", margin: "0 auto", width: "100%", padding: "0.75rem 1.5rem 0" }}>
+                        <AudienceVote
+                            debateId={debate.id}
+                            round={debate.current_round}
+                            playerALabel={`Player A (${debate.player_a_side})`}
+                            playerBLabel={`Player B (${debate.player_a_side === "FOR" ? "AGAINST" : "FOR"})`}
+                        />
+                    </div>
+                )}
 
             {/* ── Score tribune ── */}
             {(debate.status === "active" || debate.status === "scoring" || debate.status === "completed") && (
@@ -686,6 +736,12 @@ export function DebateRoom({
                                             initialMine={myReactions[arg.id] ?? null}
                                             canReact={true}
                                         />
+                                        {/* Report control — opponent's content only. */}
+                                        {!isMine && (
+                                            <div style={{ marginTop: "0.6rem" }}>
+                                                <ReportButton argumentId={arg.id} reportedUserId={arg.user_id} />
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}

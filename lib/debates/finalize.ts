@@ -1,6 +1,26 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateElo } from "@/lib/ai/elo";
 
+// Best-effort cache-tag invalidation for the leaderboard. Imported lazily and
+// guarded so it never throws into the finalize path.
+async function invalidateLeaderboard(): Promise<void> {
+    try {
+        const { revalidateTag } = await import("next/cache");
+        revalidateTag("leaderboard");
+    } catch {
+        /* non-critical: the 60s revalidate window will refresh it anyway */
+    }
+}
+
+async function invalidateDailyLeaderboard(): Promise<void> {
+    try {
+        const { revalidateTag } = await import("next/cache");
+        revalidateTag("daily-leaderboard");
+    } catch {
+        /* non-critical: the 120s revalidate window will refresh it anyway */
+    }
+}
+
 /**
  * Finalize a debate once every argument has reached a terminal scoring state.
  *
@@ -70,6 +90,9 @@ export async function finalizeIfComplete(
 
     if (!completed) return false; // another path finalized it first
 
+    // Refresh the cached Daily Topic board (any mode/outcome, incl. draws).
+    await invalidateDailyLeaderboard();
+
     if (!winnerId) return true;
 
     const loserId =
@@ -114,6 +137,12 @@ export async function finalizeIfComplete(
                 { user_id: winnerId, debate_id: debateId, elo_before: winner.elo_rating, elo_after: newWinnerElo },
                 { user_id: loserId, debate_id: debateId, elo_before: loser.elo_rating, elo_after: newLoserElo },
             ]);
+
+            // Elo changed — refresh the cached leaderboard first page promptly.
+            // Best-effort: revalidateTag can only run in a server context, so a
+            // failure (e.g. when called from an unusual context) must not break
+            // finalization.
+            await invalidateLeaderboard();
         }
     } else if (debate.mode === "casual") {
         const { data: w } = await client.from("users").select("debates_won").eq("id", winnerId).single();
