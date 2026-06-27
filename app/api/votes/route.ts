@@ -35,11 +35,15 @@ export async function GET(request: Request) {
     const mine: Record<number, string> = {};
 
     for (const v of votes ?? []) {
-        tallies[v.round_number] ??= { player_a: 0, player_b: 0 };
-        if (v.side === "player_a" || v.side === "player_b") {
-            tallies[v.round_number][v.side] += 1;
+        const round = Number(v.round_number);
+        const side: "player_a" | "player_b" | null =
+            v.side === "player_a" || v.side === "player_b" ? v.side : null;
+
+        tallies[round] ??= { player_a: 0, player_b: 0 };
+        if (side) {
+            tallies[round][side] += 1;
+            if (user && v.user_id === user.id) mine[round] = side;
         }
-        if (user && v.user_id === user.id) mine[v.round_number] = v.side;
     }
 
     return NextResponse.json({ tallies, mine });

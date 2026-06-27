@@ -14,6 +14,23 @@
 
 ## 0. Document status & ground truth
 
+- **Build health:** the Vercel production type-check is green. A prior failure in
+  `app/api/votes/route.ts` (implicit-`any` index of the per-round tally object) was fixed
+  by narrowing the round + side into typed locals before indexing. No migration involved.
+- **Security hardening (deep dive):** debate reads are now gated by visibility + participation
+  in the app layer (`lib/debates/visibility.ts`, used by the server page and `GET /api/debates/[id]`)
+  and at the DB layer (`migration 0012` SELECT policies on `debates`/`arguments`). A live
+  opponent's in-flight argument is withheld until the viewer submits that round, and the public
+  OG route no longer renders private debates. **Run `supabase/migrations/0012_debate_read_rls.sql`.**
+- **Auth hardening:** the OAuth callback now validates `next` via `lib/auth/safeRedirect.ts`
+  (same-site local paths only) to close an open-redirect; turn-notification emails skip the
+  Oracle system user. No migration.
+- **Client live-peek closed:** `DebateRoom` now redacts an opponent's in-flight argument
+  (delivered via Realtime) until the viewer submits that round, mirroring the server guard.
+  This completes the fairness fix begun server-side in the visibility pass. No migration.
+- **Schema reproducibility:** `migration 0013` adds the `public_debate_feed` view that the
+  `/debates` page depends on (previously created out-of-band). A fresh Supabase setup from
+  this repo is now self-contained. **Run `supabase/migrations/0013_public_debate_feed.sql`.**
 - **Last verified against `main`:** all of the Phase 1 + Phase 2 work described in
   `PROJECT.md` (public feed, challenges lobby, ranked matchmaking, daily topic,
   argument reactions, auto-forfeit, turn emails) **is already merged.** The old

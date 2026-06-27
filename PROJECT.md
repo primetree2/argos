@@ -572,10 +572,65 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://argos-indol.vercel.app/api/
 
 ## 15. Current Status
 
-**Session:** ROADMAP Phase 1 — vs Oracle AI mode shipped
+**Session:** Deep-dive security hardening (cont.)
 **Date:** 2026-06-27
 
 ### This checkpoint
+- ✅ **Made the public feed reproducible (migration 0013).** `app/debates/page.tsx`
+  queries a `public_debate_feed` view that no tracked migration created — it lived
+  only in the deployed DB, so a fresh setup from this repo would error on `/debates`.
+  `0013` defines the view (completed + public debates; the exact columns the page
+  reads) via DROP + CREATE so it applies cleanly over the unknown live shape and is
+  safe to run twice. **Run `supabase/migrations/0013_public_debate_feed.sql`.**
+- ℹ️ Audited the remaining frontend — `new-debate`, `Navbar`, `MatchmakingButton`,
+  `ArgumentReactions`, landing page, `profile`, public feed, dashboard. All client
+  components (mouse handlers OK), good a11y (`aria-pressed`/`aria-haspopup`/`role`),
+  null-safe rendering, Suspense-free `useSearchParams` avoided via `window.location`.
+  No bugs or UI inconsistencies found.
+
+#### Earlier this checkpoint
+- ✅ **Closed the client-side live-peek.** The server redaction (!9) didn't cover
+  Supabase Realtime: `DebateRoom` subscribes to the `arguments` table, and RLS
+  (0012) gates by participation — not by round — so a participant received the
+  opponent's argument row the instant it was inserted, and the active render
+  mapped over the full `debate.arguments`. Added a `visibleArguments` memo that
+  mirrors `lib/debates/visibility.ts`: on a live debate, an opponent's round-N
+  argument is hidden until the viewer authors round N. The active/scoring render
+  and the running score tally now derive from it; completed view unchanged. No
+  schema change.
+
+#### Earlier this checkpoint
+- ✅ **Fixed an OAuth open redirect.** `app/auth/callback/route.ts` redirected to
+  `${origin}${next}` using the raw `next` query param; values like `next=//evil.com`
+  or `next=/\evil.com` are treated by browsers as protocol-relative external URLs.
+  New `lib/auth/safeRedirect.ts` (`safeNextPath`) accepts only a single-slash,
+  same-origin local path (default `/dashboard`); the callback now always lands locally.
+- ✅ **Turn emails never address the Oracle.** `sendTurnNotification` now short-circuits
+  when `current_turn` is the Oracle system user (its move is driven by the oracle-turn
+  route / cron, not email). No schema change.
+- ℹ️ Completed the backend audit: auth callback/signout, both Supabase clients, matchmaking,
+  daily-topic generator + fallback, and email HTML escaping all reviewed — no further issues.
+
+#### Previous checkpoint
+- ✅ **Closed a debate-visibility / fairness hole.** Both `app/debate/[id]/page.tsx`
+  and `GET /api/debates/[id]` returned the full debate (every argument's `content`)
+  to any authenticated user, gated only by RLS. New `lib/debates/visibility.ts`
+  (`authorizeAndSanitizeDebate`) is wired into both read paths: non-participants can
+  only view **public** debates, and on a **live** debate an opponent's in-flight
+  argument is withheld until the viewer has submitted that round (no peeking before
+  you commit). Completed/scoring debates still show in full.
+- ✅ **OG image route no longer leaks private debates.** `/api/og` (public, unauth)
+  renders the generic Argos card for `is_public = false` debates instead of their
+  topic + scores.
+- ✅ **Explicit DB-layer RLS (migration 0012).** `debates` + `arguments` get idempotent
+  SELECT policies (public OR participant); all writes use the service role and are
+  unaffected. **Run `supabase/migrations/0012_debate_read_rls.sql`** (safe to re-run).
+- ℹ️ Audited the AI layer, Elo math, rate limiting, moderation, matchmaking, challenge
+  accept, reports/blocks, and voting/reactions — no further bugs; concurrency guards
+  and fail-open behaviour are sound.
+- ✅ (Build) Earlier fix: `app/api/votes/route.ts` implicit-any index resolved (!8).
+
+#### Earlier this session
 - ✅ **Daily Topic leaderboard (Phase 3 item 5).** `/daily` ranks players who completed a
   debate on today's topic (total score, debates, wins), cached via `getDailyLeaderboard`
   (120s, tag `daily-leaderboard`, invalidated on completion). Linked from the Daily Topic

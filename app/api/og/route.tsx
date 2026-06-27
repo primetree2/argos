@@ -44,7 +44,10 @@ export async function GET(request: Request) {
         .eq("id", debateId)
         .single();
 
-    if (!debate) {
+    // Treat a private debate the same as a missing one: this endpoint is public
+    // and unauthenticated, so it must never expose a private match's topic or
+    // scores through a shareable image URL.
+    if (!debate || debate.is_public === false) {
         return new ImageResponse(
             (
                 <div
@@ -57,7 +60,7 @@ export async function GET(request: Request) {
                         justifyContent: "center",
                     }}
                 >
-                    <span style={{ color: "white", fontSize: 48 }}>Debate not found</span>
+                    <span style={{ color: "white", fontSize: 48, fontWeight: "bold" }}>Argos</span>
                 </div>
             ),
             { width: 1200, height: 630 }

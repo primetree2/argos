@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { forfeitDebate } from "@/lib/debates/forfeit";
+import { authorizeAndSanitizeDebate } from "@/lib/debates/visibility";
 import { NextResponse } from "next/server";
 
 // Service-role client — required for cross-user stat/Elo writes on resign,
@@ -37,8 +38,17 @@ export async function GET(
         .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!debate) return NextResponse.json({ error: "Debate not found." }, { status: 404 });
 
-    return NextResponse.json({ debate });
+    // Same authorization + redaction as the server page: hide private debates
+    // from non-participants and withhold a live opponent's in-flight argument
+    // (the client polls this endpoint, so the guard must live here too).
+    const safeDebate = authorizeAndSanitizeDebate(debate, user.id);
+    if (!safeDebate) {
+        return NextResponse.json({ error: "Debate not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ debate: safeDebate });
 }
 
 export async function PATCH(
