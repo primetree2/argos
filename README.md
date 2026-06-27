@@ -22,7 +22,7 @@ Your Elo rating rises and falls with every ranked match. The shareable result ca
 - **AI Judge** — Google Gemini Flash scores every argument on Clarity, Evidence, Logic, and Rebuttal (max 80 pts)
 - **Fallacy Detection** — 10 fallacy types detected, named, quoted, and penalised (Ad hominem, Straw man, False dichotomy, and 7 more)
 - **Elo Rating** — Chess-style rating system, K=32 for new players, K=16 for veterans
-- **Real-time** — Both players see arguments and scores update live via Supabase Realtime — no refresh needed
+- **Real-time** — Sequential turns: each argument appears on BOTH players' screens the instant it's submitted (so the opponent can read it before replying), with a chat-app "Opponent is typing…" indicator. Scores update live via Supabase Realtime — no refresh needed
 - **Two modes** — Ranked (Elo affected) and Casual (no stakes)
 - **Configurable rounds** — 2 to 5 rounds per debate
 - **Shareable result cards** — OG image generated on completion, ready to post
@@ -35,7 +35,7 @@ Your Elo rating rises and falls with every ranked match. The shareable result ca
 
 | Layer        | Technology                              |
 |--------------|-----------------------------------------|
-| Framework    | Next.js 15 (App Router)                 |
+| Framework    | Next.js 16 (App Router)                 |
 | Styling      | Tailwind CSS v4 + custom design system  |
 | Components   | shadcn/ui                               |
 | AI Judge     | Google Gemini Flash (`@google/generative-ai`) |

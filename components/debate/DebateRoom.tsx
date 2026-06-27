@@ -7,6 +7,7 @@ import { ScoreBreakdown } from "./ScoreBreakdown";
 import { ArgumentReactions } from "./ArgumentReactions";
 import { ReportButton } from "@/components/safety/ReportButton";
 import { SpectatorPresence } from "./SpectatorPresence";
+import { useTypingPresence, TypingIndicator } from "./TypingPresence";
 import { AudienceVote } from "./AudienceVote";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
@@ -163,24 +164,26 @@ export function DebateRoom({
             : "FOR";
     const totalPossible = debate.total_rounds * 80;
 
-    // Fairness redaction (mirrors lib/debates/visibility.ts on the server).
-    // Realtime delivers the opponent's argument row to participants the moment
-    // it is inserted, and RLS only gates by participation — not by round. So we
-    // must hide an opponent's argument for round N here until the VIEWER has
-    // also authored round N, otherwise a player could read the opponent's
-    // current move before committing their own. Only applies while the debate
-    // is live; a completed/scoring reveal is intended. Spectators author no
-    // rounds (max 0), so they never see the in-flight round.
+    // Visibility (mirrors lib/debates/visibility.ts on the server).
+    // Argos debates are STRICTLY SEQUENTIAL: only one player moves at a time and
+    // current_turn alternates after every submission. A participant must see the
+    // opponent's argument the instant Realtime delivers it — that is the move
+    // they read and rebut on their turn. Hiding it is what made the feed look
+    // frozen for the player whose turn it was (the bug). So: participants see
+    // everything. Only a SPECTATOR on a live debate is kept out of the newest
+    // in-flight round (the highest round_number present), so the crowd can't
+    // read an argument before the opposing player does. The server already
+    // applies this same redaction for spectators; this is defense in depth for
+    // rows that arrive via Realtime.
     const visibleArguments = useMemo(() => {
+        if (!isSpectator) return debate.arguments;
         if (debate.status !== "active") return debate.arguments;
-        const viewerMaxRound = debate.arguments.reduce(
-            (max, a) => (a.user_id === currentUserId && a.round_number > max ? a.round_number : max),
+        const inFlightRound = debate.arguments.reduce(
+            (max, a) => (a.round_number > max ? a.round_number : max),
             0
         );
-        return debate.arguments.filter(
-            (a) => a.user_id === currentUserId || a.round_number <= viewerMaxRound
-        );
-    }, [debate.arguments, debate.status, currentUserId]);
+        return debate.arguments.filter((a) => a.round_number < inFlightRound);
+    }, [debate.arguments, debate.status, isSpectator]);
 
     // Derived values memoized so they aren't recomputed on every realtime event
     // or 1s timer tick. Only recompute when the arguments actually change.
@@ -198,6 +201,12 @@ export function DebateRoom({
     }, [visibleArguments, currentUserId]);
 
     const wordCount = useMemo(() => countWords(argument), [argument]);
+
+    // Live "opponent is typing…" signal (ephemeral Realtime broadcast).
+    const { opponentTyping, notifyTyping } = useTypingPresence({
+        debateId: debate.id,
+        userId: currentUserId,
+    });
 
     // ── Realtime + polling fallback ──
     // Realtime is the fast path, but websockets drop silently on mobile (network
@@ -603,16 +612,21 @@ export function DebateRoom({
                                 );
                             })}
 
-                        {/* Waiting for opponent */}
+                        {/* Waiting for opponent — show a live "typing…" pulse when
+                            the opponent is composing, else the static awaiting line. */}
                         {!isMyTurn && debate.status === "active" && (
-                            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-lg)", padding: "1.5rem", textAlign: "center" }}>
-                                <div style={{ display: "inline-flex", alignItems: "center", gap: "0.6rem" }}>
-                                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--teal)", boxShadow: "0 0 8px var(--teal)", animation: "oracle-pulse 1.8s ease-in-out infinite", flexShrink: 0, display: "inline-block" }} />
-                                    <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
-                                        Awaiting opponent's argument
-                                    </span>
+                            opponentTyping ? (
+                                <TypingIndicator />
+                            ) : (
+                                <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-lg)", padding: "1.5rem", textAlign: "center" }}>
+                                    <div style={{ display: "inline-flex", alignItems: "center", gap: "0.6rem" }}>
+                                        <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--teal)", boxShadow: "0 0 8px var(--teal)", animation: "oracle-pulse 1.8s ease-in-out infinite", flexShrink: 0, display: "inline-block" }} />
+                                        <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.65rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
+                                            Awaiting opponent's argument
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
+                            )
                         )}
 
                         {/* Scoring all final */}
@@ -664,6 +678,7 @@ export function DebateRoom({
                                         setArgument(e.target.value);
                                         if (error) setError("");
                                         growTextarea();
+                                        notifyTyping();
                                     }}
                                     placeholder="Make your argument. Be specific, cite evidence, address your opponent…"
                                     rows={5}
@@ -833,6 +848,9 @@ export function DebateRoom({
                                         >
                                             {copied ? "✓ Copied" : "Copy Link"}
                                         </button>
+                                        <a href={`/debate/${debate.id}/replay`} className="btn-ghost" style={{ textDecoration: "none" }}>
+                                            ▶ Watch Replay
+                                        </a>
                                         <a href="/dashboard" className="btn-ghost" style={{ textDecoration: "none" }}>
                                             Return to Arena →
                                         </a>

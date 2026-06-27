@@ -572,8 +572,88 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://argos-indol.vercel.app/api/
 
 ## 15. Current Status
 
-**Session:** Deep-dive security hardening (cont.)
+> **GROUND TRUTH (read this first):** Everything described anywhere in this file
+> is **MERGED to `main`**, and **all migrations `0002`–`0013` are APPLIED** in
+> Supabase. Ignore any older "awaiting merge" / "run this migration" wording
+> below — it is historical. The Gemini model in use is real and working.
+>
+> **Hard constraint:** no budget. Everything stays on **free tiers only**. Cron
+> is limited — 2 daily Vercel crons (`daily-topic`, `maintenance`) plus a
+> best-effort ~5-min GitHub Actions ping of `/api/cron/maintenance`. Do not add
+> features that assume paid cron, paid Realtime, or any paid service.
+
+**Session:** Phase 4 — presence-based Quick Match (FREE)
 **Date:** 2026-06-27
+
+### This checkpoint
+- ✅ **Quick Match (instant Blitz pairing) + live online count.** Dashboard now
+  has a "Quick Match" card that drops you into the ranked queue and pairs into a
+  fast ⚡ Blitz debate, plus an `OnlinePresence` "N online" pill (global Realtime
+  presence channel `presence:lobby`, no DB). The matchmaking pipeline is reused
+  end-to-end; `MatchmakingButton` gained a `blitz` variant, the API threads the
+  flag (POST body + `?blitz=1` on the poll), and `attemptMatch(userId,{blitz})`
+  calls `match_player_v2`.
+- ⚠️ **Run `supabase/migrations/0014_match_player_blitz.sql`** — adds
+  `match_player_v2(p_user_id, p_blitz)` (a copy of `match_player` that stamps
+  `debates.blitz`). **Idempotent (create or replace) — safe to run twice.**
+  Until it's applied, Quick Match transparently falls back to `match_player`
+  and produces a standard debate — the app is fully runnable either way.
+- Cleanup: replaced the stale "Debate vs AI — Soon" card (vs-Oracle already
+  shipped) with Quick Match; dashboard rank label now uses `getTitle`.
+
+#### Prior checkpoint — Debate replay (Phase 3, FREE)
+**Date:** 2026-06-27 (archived)
+
+### This checkpoint
+- ✅ **Debate replay — NO migration, NO schema.** `/debate/[id]/replay` replays a
+  completed debate argument-by-argument with a running per-player score tally,
+  play/pause + prev/next/restart, and the existing `ScoreBreakdown` reveal.
+  Server page `app/debate/[id]/replay/page.tsx` authorizes via the shared
+  `authorizeAndSanitizeDebate` (private debates hidden from non-participants;
+  non-completed debates redirect to the live room). Client component
+  `components/debate/DebateReplay.tsx`; `loading.tsx` uses `OracleLoader`. A
+  "▶ Watch Replay" link was added to the completed result card. Reuses existing
+  data only. Runnable as-is.
+
+#### Prior checkpoint — Achievements / titles / badges (Phase 3, FREE)
+**Date:** 2026-06-27 (archived)
+
+### This checkpoint
+- ✅ **Achievements / titles / badges — NO migration, NO schema.** Computed on
+  the fly from existing data. `lib/achievements.ts` is pure: `getTitle(elo)`
+  (single Elo-driven rank) + `computeBadges()` (first win, debate-count
+  milestones, win-rate, fallacy-free counts, Elo tiers). The profile page
+  derives `scoredArguments` / `fallacyFreeArguments` from a capped read of the
+  user's `scoring_status='done'` arguments (`fallacies_found` empty = clean),
+  uses `getTitle` for the rank line (replacing the old inline 3-tier label),
+  and renders `components/profile/Achievements.tsx` (earned glow / locked
+  dimmed-as-goals, CSS-vars only, a11y labels, no client JS). Runnable as-is.
+
+#### Prior checkpoint — Live realtime feed fix + settlement refactor
+**Date:** 2026-06-27 (archived)
+
+### This checkpoint
+- ✅ **Fixed the live-feed inconsistency in sequential debates.** Debates are
+  strictly sequential (`submit_argument` flips `current_turn` each move), but a
+  prior anti-peek redaction assumed simultaneous play and hid the opponent's
+  just-submitted argument from the player whose turn it was until they
+  themselves submitted (or scoring finished). The author's own screen looked
+  fine — read as a desktop/mobile bug but was author-vs-opponent. Now
+  participants always see every submitted argument the instant it lands
+  (Realtime + the 8s poll); only **spectators** are kept out of the single
+  in-flight round on a live debate. `lib/debates/visibility.ts` +
+  `DebateRoom.tsx` `visibleArguments`. No migration.
+- ✅ **Added a chat-app “Opponent is typing…” indicator.** Ephemeral Supabase
+  Realtime **broadcast** (no DB writes), throttled 1/s with an idle auto-clear
+  so it never sticks on a dropped mobile socket. `components/debate/TypingPresence.tsx`,
+  wired into `DebateRoom`.
+- ✅ **Removed the dual Elo-settlement footgun.** `finalize.ts` (normal
+  completion) and `forfeit.ts` (resign/ghost) duplicated identical Elo + stats
+  math. Extracted `lib/debates/settle.ts` (`settleResult`); both now call it, so
+  rating logic lives in one place. Behaviour unchanged. No migration.
+
+#### Prior checkpoint — Deep-dive security hardening (cont.)
+**Date:** 2026-06-27 (archived)
 
 ### This checkpoint
 - ✅ **Made the public feed reproducible (migration 0013).** `app/debates/page.tsx`
@@ -736,7 +816,8 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://argos-indol.vercel.app/api/
 - **DebateRoom.tsx refactor** — split into hooks + sub-components
 - **Optimistic argument submission** — show immediately with `scoring_status: pending`
 
-Document version: 4.0
-AI provider: Google Gemini (`gemini-3.1-flash-lite`)
-Infrastructure: 100% free at launch
+Document version: 4.1
+AI provider: Google Gemini (real model, confirmed working; isolated in lib/ai/)
+Infrastructure: 100% free tier (no budget) — limited cron (2 daily Vercel + best-effort 5-min GitHub Actions)
+State: ALL features merged, ALL migrations (0002–0013) applied
 Deployed: argos-indol.vercel.app

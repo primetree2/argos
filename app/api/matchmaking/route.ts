@@ -64,7 +64,16 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: upsertError.message }, { status: 500 });
     }
 
-    const result = await attemptMatch(user.id);
+    // Quick Match: pair into a Blitz debate. Read from the JSON body (best-effort).
+    let blitz = false;
+    try {
+        const body = await request.json();
+        blitz = body?.blitz === true;
+    } catch {
+        /* no body — standard match */
+    }
+
+    const result = await attemptMatch(user.id, { blitz });
     if (result.matched && result.debateId) {
         await flagSybilDebate(supabase, result.debateId);
     }
@@ -98,7 +107,9 @@ export async function GET(request: Request) {
     }
 
     // Still waiting — re-attempt (band may have widened since we joined).
-    const result = await attemptMatch(user.id);
+    // Preserve the blitz preference across the poll via ?blitz=1.
+    const blitz = new URL(request.url).searchParams.get("blitz") === "1";
+    const result = await attemptMatch(user.id, { blitz });
     if (result.matched && result.debateId) {
         await backfillIpHash(supabase, user.id, request);
         await flagSybilDebate(supabase, result.debateId);

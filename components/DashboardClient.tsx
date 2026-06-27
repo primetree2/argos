@@ -5,7 +5,9 @@ import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
 import { MatchmakingButton } from "@/components/MatchmakingButton";
+import { OnlinePresence } from "@/components/OnlinePresence";
 import { DailyTopicBanner } from "@/components/DailyTopicBanner";
+import { getTitle } from "@/lib/achievements";
 import type { DailyTopic } from "@/lib/dailyTopic";
 import type { DebateHistoryEntry } from "@/lib/debates";
 
@@ -59,7 +61,7 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
     const lostDisplay = useCountUp(lost, 900);
     const rateDisplay = useCountUp(winRate, 1000);
 
-    const rankLabel = elo >= 1400 ? "Rhetorical Master" : elo >= 1200 ? "Journeyman Orator" : "Novice Debater";
+    const rankLabel = getTitle(elo).label;
 
     return (
         <div style={{ minHeight: "100vh", background: "var(--bg-void)", color: "var(--text-primary)" }}>
@@ -128,13 +130,13 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                     </div>
                 )}
 
-                {/* Certamen divider */}
+                {/* Certamen divider + live online count */}
                 <div className="reveal-3" style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.25rem" }}>
-                    <div className="gold-rule-subtle" style={{ flex: 1 }} />
                     <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.60rem", letterSpacing: "0.28em", color: "var(--text-gold)", textTransform: "uppercase", whiteSpace: "nowrap" }}>
                         Certamen
                     </span>
                     <div className="gold-rule-subtle" style={{ flex: 1 }} />
+                    <OnlinePresence viewerKey={userId} />
                 </div>
 
                 {/* Action cards */}
@@ -172,7 +174,14 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                         </div>
                     </Link>
 
-                    <ComingSoonCard title="Debate vs AI" desc="Test your arguments against the Oracle itself." iconPath="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2zM4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                    {/* Quick Match — presence-driven instant Blitz pairing (Phase 4) */}
+                    <MatchmakingButton
+                        userId={userId}
+                        blitz
+                        title="Quick Match"
+                        description="Instant pairing into a fast ⚡ Blitz debate (90s turns)."
+                        accent="var(--gold)"
+                    />
 
                     {/* Leaderboard — now live */}
                     <Link href="/leaderboard" style={{ textDecoration: "none" }}>
@@ -343,21 +352,6 @@ function ActionIcon({ color, children }: { color: string; children: React.ReactN
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.85 }}>
                 {children}
             </svg>
-        </div>
-    );
-}
-
-function ComingSoonCard({ title, desc, iconPath }: { title: string; desc: string; iconPath: string }) {
-    return (
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", padding: "1.75rem 1.5rem", opacity: 0.55, cursor: "not-allowed", position: "relative", overflow: "hidden" }}>
-            <span style={{ position: "absolute", top: "0.9rem", right: "0.9rem", fontFamily: "var(--font-share-tech), monospace", fontSize: "0.55rem", letterSpacing: "0.18em", color: "var(--text-tertiary)", border: "1px solid var(--border-subtle)", borderRadius: "2px", padding: "0.15rem 0.45rem", textTransform: "uppercase" }}>
-                Soon
-            </span>
-            <ActionIcon color="var(--text-tertiary)">
-                <path d={iconPath} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </ActionIcon>
-            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.9rem", fontWeight: 600, letterSpacing: "0.06em", color: "var(--text-primary)", marginBottom: "0.4rem" }}>{title}</p>
-            <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.88rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>{desc}</p>
         </div>
     );
 }

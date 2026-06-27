@@ -5,6 +5,8 @@ import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
 import { fetchDebateHistory, type DebateHistoryEntry } from "@/lib/debates";
 import { BlockButton } from "@/components/safety/BlockButton";
+import { Achievements } from "@/components/profile/Achievements";
+import { getTitle } from "@/lib/achievements";
 
 // Oracle system user (migration 0006) — never offer to block the AI.
 const ORACLE_USER_ID = "00000000-0000-0000-0000-0000000000a1";
@@ -97,7 +99,7 @@ export default async function ProfilePage({
     const canBlock =
         !!user && user.id !== profile.id && profile.id !== ORACLE_USER_ID;
 
-    const [{ data: eloRows }, history] = await Promise.all([
+    const [{ data: eloRows }, history, { data: scoredArgs }] = await Promise.all([
         supabase
             .from("elo_history")
             .select("elo_before, elo_after, created_at")
@@ -105,6 +107,15 @@ export default async function ProfilePage({
             .order("created_at", { ascending: true })
             .limit(60),
         fetchDebateHistory(supabase, profile.id, 5),
+        // Scored arguments by this user — used to derive fallacy-free badges.
+        // Capped; badges only need thresholds (10 / 20+), not an exact lifetime
+        // count, so this stays a cheap bounded read.
+        supabase
+            .from("arguments")
+            .select("fallacies_found")
+            .eq("user_id", profile.id)
+            .eq("scoring_status", "done")
+            .limit(500),
     ]);
 
     const elo = profile.elo_rating ?? 1200;
@@ -113,7 +124,16 @@ export default async function ProfilePage({
     const total = won + lost;
     const winRate = total > 0 ? Math.round((won / total) * 100) : 0;
     const memberSince = profile.created_at ? DATE_FMT.format(new Date(profile.created_at)) : null;
-    const rankLabel = elo >= 1400 ? "Rhetorical Master" : elo >= 1200 ? "Journeyman Orator" : "Novice Debater";
+    const rankLabel = getTitle(elo).label;
+
+    // Count scored + fallacy-free arguments for the achievement badges. A
+    // fallacy-free argument has an empty fallacies_found array.
+    const scoredArguments = scoredArgs?.length ?? 0;
+    const fallacyFreeArguments =
+        scoredArgs?.filter((a) => {
+            const f = a.fallacies_found as unknown;
+            return Array.isArray(f) ? f.length === 0 : true;
+        }).length ?? 0;
 
     const eloSeries =
         eloRows && eloRows.length > 0
@@ -199,8 +219,21 @@ export default async function ProfilePage({
                     </div>
                 </div>
 
+                {/* Achievements */}
+                <div className="reveal-4" style={{ marginBottom: "2.5rem" }}>
+                    <Achievements
+                        input={{
+                            elo,
+                            wins: won,
+                            losses: lost,
+                            scoredArguments,
+                            fallacyFreeArguments,
+                        }}
+                    />
+                </div>
+
                 {/* Recent debates */}
-                <div className="reveal-4">
+                <div className="reveal-5">
                     <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
                         <div className="gold-rule-subtle" style={{ flex: 1 }} />
                         <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.60rem", letterSpacing: "0.28em", color: "var(--text-gold)", textTransform: "uppercase", whiteSpace: "nowrap" }}>

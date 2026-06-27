@@ -8,7 +8,23 @@ import { createClient } from "@/lib/supabase/client";
 // Joins the queue, then watches for a match via Supabase Realtime on our own
 // queue row, with polling as a fallback (which also re-triggers the widening
 // match attempt server-side).
-export function MatchmakingButton({ userId }: { userId: string }) {
+//
+// `blitz` turns this into the Phase 4 "Quick Match" variant: it asks the server
+// to pair into a fast Blitz debate (90s turns). Title/description/accent are
+// overridable so the same component serves both cards.
+export function MatchmakingButton({
+    userId,
+    blitz = false,
+    title,
+    description,
+    accent = "var(--teal)",
+}: {
+    userId: string;
+    blitz?: boolean;
+    title?: string;
+    description?: string;
+    accent?: string;
+}) {
     const router = useRouter();
     const supabase = createClient();
     const [searching, setSearching] = useState(false);
@@ -44,7 +60,11 @@ export function MatchmakingButton({ userId }: { userId: string }) {
         setSearching(true);
         setElapsed(0);
         setNote("");
-        const res = await fetch("/api/matchmaking", { method: "POST" });
+        const res = await fetch("/api/matchmaking", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ blitz }),
+        });
         const data = await res.json();
         if (data.matched && data.debateId) {
             goToDebate(data.debateId);
@@ -61,11 +81,11 @@ export function MatchmakingButton({ userId }: { userId: string }) {
         }, 1000);
         // Poll fallback (also re-attempts match with widened band).
         pollRef.current = setInterval(async () => {
-            const r = await fetch("/api/matchmaking");
+            const r = await fetch(`/api/matchmaking${blitz ? "?blitz=1" : ""}`);
             const d = await r.json().catch(() => ({}));
             if (d.matched && d.debateId) goToDebate(d.debateId);
         }, 4000);
-    }, [goToDebate]);
+    }, [goToDebate, blitz]);
 
     // Realtime: react the instant another player matches our row.
     useEffect(() => {
@@ -107,19 +127,25 @@ export function MatchmakingButton({ userId }: { userId: string }) {
             <button
                 onClick={start}
                 className="glass-card action-card-primary"
-                style={{ padding: "1.75rem 1.5rem", borderTop: "1px solid var(--teal)", cursor: "pointer", height: "100%", width: "100%", textAlign: "left", background: "var(--bg-glass)" }}
+                style={{ padding: "1.75rem 1.5rem", borderTop: `1px solid ${accent}`, cursor: "pointer", height: "100%", width: "100%", textAlign: "left", background: "var(--bg-glass)" }}
             >
                 <div style={{ marginBottom: "0.85rem" }}>
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.85 }}>
-                        <circle cx="11" cy="11" r="7" />
-                        <path d="m21 21-4.3-4.3" />
-                    </svg>
+                    {blitz ? (
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.85 }}>
+                            <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />
+                        </svg>
+                    ) : (
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.85 }}>
+                            <circle cx="11" cy="11" r="7" />
+                            <path d="m21 21-4.3-4.3" />
+                        </svg>
+                    )}
                 </div>
                 <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.9rem", fontWeight: 600, letterSpacing: "0.06em", color: "var(--text-primary)", marginBottom: "0.4rem" }}>
-                    Find Opponent
+                    {title ?? "Find Opponent"}
                 </p>
                 <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.88rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                    Enter the ranked queue and be matched by Elo.
+                    {description ?? "Enter the ranked queue and be matched by Elo."}
                 </p>
             </button>
         );
@@ -128,13 +154,13 @@ export function MatchmakingButton({ userId }: { userId: string }) {
     return (
         <div
             className="glass-card"
-            style={{ padding: "1.75rem 1.5rem", borderTop: "1px solid var(--teal)", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", boxShadow: "var(--shadow-teal)" }}
+            style={{ padding: "1.75rem 1.5rem", borderTop: `1px solid ${accent}`, height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", boxShadow: "var(--shadow-teal)" }}
         >
             <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.6rem" }}>
                     <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--teal)", boxShadow: "0 0 8px var(--teal)", animation: "oracle-pulse 1.4s ease-in-out infinite", display: "inline-block" }} />
-                    <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.62rem", letterSpacing: "0.2em", color: "var(--teal)", textTransform: "uppercase" }}>
-                        Searching…
+                    <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.62rem", letterSpacing: "0.2em", color: accent, textTransform: "uppercase" }}>
+                        {blitz ? "Quick matching…" : "Searching…"}
                     </p>
                     <span style={{ marginLeft: "auto", fontFamily: "var(--font-share-tech), monospace", fontSize: "0.85rem", color: "var(--text-secondary)", letterSpacing: "0.06em" }}>
                         {fmt(elapsed)}

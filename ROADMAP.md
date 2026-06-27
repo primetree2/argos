@@ -327,8 +327,21 @@ side is what realistically gets you to six figures.
 8. ✅ Blitz mode (Phase 3 item 3) — done.
 9. ✅ Audience voting (Phase 3 item 2) — done.
 10. ✅ Per-topic Daily Topic leaderboard (Phase 3 item 5) — done.
-11. **NEXT (Phase 3):** Achievements / titles / badges (Elo milestones + fallacy-free
-    streaks on the profile), then debate replay. After that: Phase 4 presence-based Quick Match.
+11. ✅ Live realtime feed fix (sequential debates show the opponent's move
+    instantly) + "Opponent is typing…" indicator + shared Elo settlement
+    (`lib/debates/settle.ts`).
+12. ✅ Achievements / titles / badges — on-the-fly, no schema (`lib/achievements.ts`,
+    `components/profile/Achievements.tsx`, wired into the profile page).
+13. ✅ Debate replay — `/debate/[id]/replay` stepped timeline with running score
+    tally (`components/debate/DebateReplay.tsx`), reuses existing data, no schema.
+14. ✅ Phase 4 Quick Match — dashboard Quick Match card pairs into a Blitz debate
+    via the existing race-safe queue (`match_player_v2`, migration 0014, idempotent),
+    plus a live `OnlinePresence` "N online" pill. Falls back to `match_player` if
+    0014 isn't applied yet, so the app stays runnable.
+15. **NEXT (FREE):** Phase 5 plumbing — usage metering + an `is_pro` flag
+    (default everyone unlimited during beta) so a paywall is a later flag-flip;
+    and Phase 3 follow-ups (a "Live now" discovery surface listing active public
+    debates, hide blocked users from the feed). All FREE-tier; 💰 PAID deferred.
 
 > **Phase 3 (virality) progressing:** spectator mode ✅, Blitz mode ✅, audience voting ✅,
 > daily-topic leaderboard ✅; next are achievements/badges + replay.
