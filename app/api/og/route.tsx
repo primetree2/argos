@@ -84,13 +84,16 @@ export async function GET(request: Request) {
         .single() : { data: null };
 
     // Calculate scores
-    const scoreA = debate.arguments
-        .filter((a: any) => a.user_id === debate.player_a_id)
-        .reduce((sum: number, a: any) => sum + (a.score_total ?? 0), 0);
+    type ArgRow = { user_id: string; score_total: number | null };
+    const debateArgs = (debate.arguments ?? []) as ArgRow[];
 
-    const scoreB = debate.arguments
-        .filter((a: any) => a.user_id === debate.player_b_id)
-        .reduce((sum: number, a: any) => sum + (a.score_total ?? 0), 0);
+    const scoreA = debateArgs
+        .filter((a) => a.user_id === debate.player_a_id)
+        .reduce((sum, a) => sum + (a.score_total ?? 0), 0);
+
+    const scoreB = debateArgs
+        .filter((a) => a.user_id === debate.player_b_id)
+        .reduce((sum, a) => sum + (a.score_total ?? 0), 0);
 
     const winnerName =
         debate.winner_id

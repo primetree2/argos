@@ -6,7 +6,7 @@ import { calculateElo } from "@/lib/ai/elo";
 async function invalidateLeaderboard(): Promise<void> {
     try {
         const { revalidateTag } = await import("next/cache");
-        revalidateTag("leaderboard");
+        revalidateTag("leaderboard", "max");
     } catch {
         /* non-critical: the 60s revalidate window will refresh it anyway */
     }
@@ -15,7 +15,7 @@ async function invalidateLeaderboard(): Promise<void> {
 async function invalidateDailyLeaderboard(): Promise<void> {
     try {
         const { revalidateTag } = await import("next/cache");
-        revalidateTag("daily-leaderboard");
+        revalidateTag("daily-leaderboard", "max");
     } catch {
         /* non-critical: the 120s revalidate window will refresh it anyway */
     }
