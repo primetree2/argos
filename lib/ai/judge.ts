@@ -48,12 +48,8 @@ export async function scoreArgument(
             // it minutes later. A bounded timeout fails fast and deterministically
             // so the retry/finalize path runs promptly.
             return await runOnce(PRIMARY_MODEL);
-        } catch (error: any) {
-            const isRetryable =
-                error?.status === 503 || error?.status === 429 ||
-                error?.name === "TimeoutError" ||
-                String(error).includes("503") || String(error).includes("429") ||
-                String(error).includes("timed out");
+        } catch (error: unknown) {
+            const isRetryable = isTransient(error);
             const isLastAttempt = attempt === retries;
 
             if (isRetryable && !isLastAttempt) {
@@ -82,6 +78,21 @@ export async function scoreArgument(
 
 // Per-attempt ceiling for a single Gemini call.
 const GEMINI_TIMEOUT_MS = 30000;
+
+// A Gemini error is transient (worth retrying / falling back) when it is a
+// quota (429), overload (503), or our own bounded timeout. Narrowed from
+// `unknown` so the catch clause stays type-safe (no `any`).
+function isTransient(error: unknown): boolean {
+    const e = error as { status?: number; name?: string } | undefined;
+    return (
+        e?.status === 503 ||
+        e?.status === 429 ||
+        e?.name === "TimeoutError" ||
+        String(error).includes("503") ||
+        String(error).includes("429") ||
+        String(error).includes("timed out")
+    );
+}
 
 export interface ModerationVerdict {
     allowed: boolean;
