@@ -2,6 +2,11 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
+import {
+    getLeaderboardFirstPage,
+    fetchLeaderboardPage,
+    LEADERBOARD_PAGE_SIZE,
+} from "@/lib/cache/leaderboard";
 
 export const metadata = {
     title: "Leaderboard — Argos",
@@ -23,10 +28,9 @@ export default async function LeaderboardPage({
     searchParams: Promise<{ page?: string }>;
 }) {
     const sp = await searchParams;
-    const PAGE_SIZE = 50;
+    const PAGE_SIZE = LEADERBOARD_PAGE_SIZE;
     const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
     const from = (page - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
 
     const supabase = await createClient();
     const {
@@ -43,11 +47,12 @@ export default async function LeaderboardPage({
         viewerUsername = me?.username ?? null;
     }
 
-    const { data: players, count } = await supabase
-        .from("users")
-        .select("id, username, elo_rating, debates_won, debates_lost", { count: "exact" })
-        .order("elo_rating", { ascending: false })
-        .range(from, to);
+    // Page 1 (where nearly all traffic lands) is served from the cached read
+    // path; deeper pages fall through to a live query.
+    const { players, count } =
+        page === 1
+            ? await getLeaderboardFirstPage()
+            : await fetchLeaderboardPage(page);
 
     const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
     const hasPrev = page > 1;

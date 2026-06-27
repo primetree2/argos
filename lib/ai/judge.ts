@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { buildJudgePrompt } from "./prompts";
+import { buildJudgePrompt, buildModerationPrompt } from "./prompts";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -82,6 +82,43 @@ export async function scoreArgument(
 
 // Per-attempt ceiling for a single Gemini call.
 const GEMINI_TIMEOUT_MS = 30000;
+
+export interface ModerationVerdict {
+    allowed: boolean;
+    category: string;
+    reason: string;
+}
+
+// Gemini safety pass (ROADMAP Phase 1, item 3). Returns a deterministic safety
+// verdict for an argument BEFORE it is accepted. Runs on the lite model with a
+// shorter timeout (this sits on the submit hot path). FAIL-OPEN: any error,
+// timeout, or unparseable response resolves to { allowed: true } so a Gemini
+// outage never blocks legitimate play — the cheap regex/length filter in
+// lib/moderation.ts remains the always-on gate.
+export async function moderateWithOracle(content: string): Promise<ModerationVerdict> {
+    const ALLOW: ModerationVerdict = { allowed: true, category: "none", reason: "" };
+    try {
+        const model = genAI.getGenerativeModel({ model: PRIMARY_MODEL });
+        const result = await withTimeout(
+            model.generateContent(buildModerationPrompt(content)),
+            15000
+        );
+        const text = result.response.text().replace(/```json|```/g, "").trim();
+        const raw = JSON.parse(text) as Partial<ModerationVerdict>;
+        if (typeof raw.allowed !== "boolean") return ALLOW;
+        return {
+            allowed: raw.allowed,
+            category: typeof raw.category === "string" ? raw.category : "none",
+            reason:
+                !raw.allowed && typeof raw.reason === "string" && raw.reason.trim()
+                    ? raw.reason.trim()
+                    : "This argument was flagged by safety review. Keep the debate respectful.",
+        };
+    } catch {
+        // Fail open — do not block a legitimate user on a transient AI error.
+        return ALLOW;
+    }
+}
 
 // Reject with a TimeoutError if the promise doesn't settle within `ms`.
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

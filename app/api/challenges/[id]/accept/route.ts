@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { backfillIpHash, flagSybilDebate } from "@/lib/safety/fingerprint";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -10,6 +11,9 @@ export async function POST(
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // Anti-Sybil: record this user's hashed IP on first sight (no-op if set).
+    await backfillIpHash(supabase, user.id, request);
 
     const { data: challenge, error: challengeError } = await supabase
         .from("challenges")
@@ -68,6 +72,10 @@ export async function POST(
             { status: 409 }
         );
     }
+
+    // Soft Sybil flag: marks the debate for review if both players share an IP
+    // hash. No-op otherwise. Never blocks play.
+    await flagSybilDebate(supabase, debate.id);
 
     return NextResponse.json({ debateId: debate.id });
 }

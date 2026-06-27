@@ -4,6 +4,10 @@ import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
 import { fetchDebateHistory, type DebateHistoryEntry } from "@/lib/debates";
+import { BlockButton } from "@/components/safety/BlockButton";
+
+// Oracle system user (migration 0006) — never offer to block the AI.
+const ORACLE_USER_ID = "00000000-0000-0000-0000-0000000000a1";
 
 const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
@@ -69,18 +73,29 @@ export default async function ProfilePage({
     if (!profile) notFound();
 
     let viewerUsername: string | null = null;
+    let viewerBlocksProfile = false;
     if (user) {
         if (user.id === profile.id) {
             viewerUsername = profile.username;
         } else {
-            const { data: me } = await supabase
-                .from("users")
-                .select("username")
-                .eq("id", user.id)
-                .single();
+            const [{ data: me }, { data: block }] = await Promise.all([
+                supabase.from("users").select("username").eq("id", user.id).single(),
+                supabase
+                    .from("user_blocks")
+                    .select("id")
+                    .eq("blocker_id", user.id)
+                    .eq("blocked_id", profile.id)
+                    .maybeSingle(),
+            ]);
             viewerUsername = me?.username ?? null;
+            viewerBlocksProfile = !!block;
         }
     }
+
+    // Show the block control only to a signed-in viewer looking at someone
+    // else's (non-Oracle) profile.
+    const canBlock =
+        !!user && user.id !== profile.id && profile.id !== ORACLE_USER_ID;
 
     const [{ data: eloRows }, history] = await Promise.all([
         supabase
@@ -127,6 +142,11 @@ export default async function ProfilePage({
                         {memberSince && <> · In the arena since {memberSince}</>}
                     </p>
                     <div style={{ marginTop: "0.85rem", height: "1px", width: "120px", background: "linear-gradient(90deg, var(--gold) 0%, var(--gold-border) 60%, transparent 100%)" }} />
+                    {canBlock && (
+                        <div style={{ marginTop: "1.1rem" }}>
+                            <BlockButton targetUserId={profile.id} initialBlocked={viewerBlocksProfile} />
+                        </div>
+                    )}
                 </div>
 
                 {/* Stat grid */}

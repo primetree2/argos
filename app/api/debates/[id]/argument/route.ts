@@ -65,10 +65,20 @@ export async function POST(
 
     const trimmed = content.trim();
 
-    // Moderate BEFORE any write. Authoritative server-side gate.
+    // Moderate BEFORE any write. Two gates, cheapest first:
+    //   1. Cheap, always-on regex/length filter (lib/moderation.ts).
+    //   2. Gemini safety pass for the categories a regex can't catch
+    //      (targeted harassment, hate, doxxing, spam). Fail-open: a Gemini
+    //      outage never blocks a legitimate user (see moderateWithOracle).
     const mod = moderateContent(trimmed);
     if (!mod.allowed) {
         return NextResponse.json({ error: mod.reason }, { status: 400 });
+    }
+
+    const { moderateWithOracle } = await import("@/lib/ai/judge");
+    const safety = await moderateWithOracle(trimmed);
+    if (!safety.allowed) {
+        return NextResponse.json({ error: safety.reason }, { status: 400 });
     }
 
     // Atomic insert + turn/round advance. The SQL function enforces turn,
@@ -89,15 +99,25 @@ export async function POST(
         return NextResponse.json({ error: "Failed to submit argument." }, { status: 500 });
     }
 
-    // Trigger scoring as a trusted internal call. We pass the validated userId
-    // and an internal secret so /api/score does NOT depend on the submitter's
-    // (possibly stale) cookie. Awaited so a transient failure leaves the row in
-    // 'pending'/'scoring' for the maintenance requeue + client self-heal to
-    // pick up, rather than being silently lost. We never fail the submission
-    // itself on a scoring error — the argument is already safely persisted.
+    // Async scoring (ROADMAP Phase 2). Scoring is decoupled from this request:
+    //   1. Enqueue a durable scoring_jobs row (migration 0009). This is the
+    //      authoritative backstop — the maintenance cron drains the queue if the
+    //      fire-and-forget call below never lands.
+    //   2. Fire the score call WITHOUT awaiting it, so submit returns promptly
+    //      instead of blocking up to 30s x retries on Gemini. The argument is
+    //      already safely persisted as 'pending'; the queue, the cron requeue,
+    //      and the client self-heal all recover a dropped trigger.
     const origin = new URL(request.url).origin;
     try {
-        await fetch(`${origin}/api/score`, {
+        await serviceClient.rpc("enqueue_scoring_job", {
+            p_argument_id: argumentId,
+            p_user_id: user.id,
+        });
+    } catch {
+        /* the cron also scans stuck 'pending' arguments, so this is non-fatal */
+    }
+    try {
+        void fetch(`${origin}/api/score`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -106,16 +126,47 @@ export async function POST(
             body: JSON.stringify({ argumentId, userId: user.id }),
         });
     } catch {
-        /* recovered asynchronously by maintenance requeue / client self-heal */
+        /* recovered asynchronously by the queue / maintenance requeue / self-heal */
     }
 
-    // Notify the player whose turn it now is (no-op if the debate just entered
-    // scoring; sendTurnNotification checks status === 'active').
-    try {
-        const { sendTurnNotification } = await import("@/lib/email/resend");
-        sendTurnNotification(id).catch(() => { });
-    } catch {
-        /* non-critical */
+    // vs-Oracle: if the opponent is the Oracle and it is now its turn, drive
+    // the Oracle's move as a trusted internal call. The maintenance cron is the
+    // free backstop if this trigger is dropped. We do NOT await it so the
+    // human's submit returns promptly; the UI picks up the Oracle's reply via
+    // Realtime once it lands. Skipped entirely for human-vs-human debates.
+    const { ORACLE_USER_ID } = await import("@/lib/ai/oracle");
+    const { data: postState } = await serviceClient
+        .from("debates")
+        .select("player_b_id, status, current_turn")
+        .eq("id", id)
+        .single();
+
+    const isOracleTurnNow =
+        postState?.player_b_id === ORACLE_USER_ID &&
+        postState?.status === "active" &&
+        postState?.current_turn === ORACLE_USER_ID;
+
+    if (isOracleTurnNow) {
+        try {
+            void fetch(`${origin}/api/debates/${id}/oracle-turn`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": process.env.CRON_SECRET ?? "",
+                },
+            });
+        } catch {
+            /* recovered by maintenance cron oracle backstop */
+        }
+    } else {
+        // Notify the human player whose turn it now is (no-op if the debate just
+        // entered scoring; sendTurnNotification checks status === 'active').
+        try {
+            const { sendTurnNotification } = await import("@/lib/email/resend");
+            sendTurnNotification(id).catch(() => { });
+        } catch {
+            /* non-critical */
+        }
     }
 
     return NextResponse.json({ argumentId });

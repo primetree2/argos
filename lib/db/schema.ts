@@ -31,6 +31,8 @@ export const debates = pgTable("debates", {
     winnerId: uuid("winner_id").references(() => users.id),
     isPublic: boolean("is_public").default(true),
     turnStartedAt: timestamp("turn_started_at", { withTimezone: true }),
+    // Blitz mode (migration 0010): short 90s turns instead of 10 min.
+    blitz: boolean("blitz").default(false),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -94,4 +96,16 @@ export const argumentReactions = pgTable("argument_reactions", {
     userId: uuid("user_id").references(() => users.id).notNull(),
     reactionType: text("reaction_type").notNull(), // strong | brutal | questionable
     createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Async scoring queue (migration 0009). One row per argument awaiting scoring;
+// drained by the maintenance cron via claim_scoring_jobs().
+export const scoringJobs = pgTable("scoring_jobs", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    argumentId: uuid("argument_id").references(() => arguments_.id).unique().notNull(),
+    userId: uuid("user_id").references(() => users.id),
+    status: text("status").notNull().default("queued"), // queued | claimed
+    attempts: integer("attempts").notNull().default(0),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
