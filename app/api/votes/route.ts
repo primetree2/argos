@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 // the caller's own rows; we use the authed client so auth.uid() is set.
 
 const VALID_SIDES = new Set(["player_a", "player_b"]);
+type VoteSide = "player_a" | "player_b";
 
 export async function GET(request: Request) {
     const supabase = await createClient();
@@ -32,14 +33,23 @@ export async function GET(request: Request) {
 
     // tallies[round][side] = count ; mine[round] = side chosen by the caller
     const tallies: Record<number, { player_a: number; player_b: number }> = {};
-    const mine: Record<number, string> = {};
+    const mine: Record<number, VoteSide> = {};
 
     for (const v of votes ?? []) {
-        tallies[v.round_number] ??= { player_a: 0, player_b: 0 };
+        tallies[v.round_number] ??= {
+            player_a: 0,
+            player_b: 0,
+        };
+
         if (v.side === "player_a" || v.side === "player_b") {
-            tallies[v.round_number][v.side] += 1;
+            const side: VoteSide = v.side;
+
+            tallies[v.round_number][side] += 1;
+
+            if (user && v.user_id === user.id) {
+                mine[v.round_number] = side;
+            }
         }
-        if (user && v.user_id === user.id) mine[v.round_number] = v.side;
     }
 
     return NextResponse.json({ tallies, mine });
