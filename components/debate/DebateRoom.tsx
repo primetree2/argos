@@ -163,18 +163,39 @@ export function DebateRoom({
             : "FOR";
     const totalPossible = debate.total_rounds * 80;
 
+    // Fairness redaction (mirrors lib/debates/visibility.ts on the server).
+    // Realtime delivers the opponent's argument row to participants the moment
+    // it is inserted, and RLS only gates by participation — not by round. So we
+    // must hide an opponent's argument for round N here until the VIEWER has
+    // also authored round N, otherwise a player could read the opponent's
+    // current move before committing their own. Only applies while the debate
+    // is live; a completed/scoring reveal is intended. Spectators author no
+    // rounds (max 0), so they never see the in-flight round.
+    const visibleArguments = useMemo(() => {
+        if (debate.status !== "active") return debate.arguments;
+        const viewerMaxRound = debate.arguments.reduce(
+            (max, a) => (a.user_id === currentUserId && a.round_number > max ? a.round_number : max),
+            0
+        );
+        return debate.arguments.filter(
+            (a) => a.user_id === currentUserId || a.round_number <= viewerMaxRound
+        );
+    }, [debate.arguments, debate.status, currentUserId]);
+
     // Derived values memoized so they aren't recomputed on every realtime event
     // or 1s timer tick. Only recompute when the arguments actually change.
+    // NOTE: derived from visibleArguments so a hidden in-flight opponent
+    // argument is also kept out of the running score tally.
     const { myArguments, opponentArguments, myScore, opponentScore } = useMemo(() => {
-        const mine = debate.arguments.filter((a) => a.user_id === currentUserId);
-        const opp = debate.arguments.filter((a) => a.user_id !== currentUserId);
+        const mine = visibleArguments.filter((a) => a.user_id === currentUserId);
+        const opp = visibleArguments.filter((a) => a.user_id !== currentUserId);
         return {
             myArguments: mine,
             opponentArguments: opp,
             myScore: mine.reduce((sum, a) => sum + (a.score_total ?? 0), 0),
             opponentScore: opp.reduce((sum, a) => sum + (a.score_total ?? 0), 0),
         };
-    }, [debate.arguments, currentUserId]);
+    }, [visibleArguments, currentUserId]);
 
     const wordCount = useMemo(() => countWords(argument), [argument]);
 
@@ -520,11 +541,11 @@ export function DebateRoom({
                 {(debate.status === "active" || debate.status === "scoring") && (
                     <>
                         {[
-                            ...debate.arguments,
+                            ...visibleArguments,
                             // Append optimistic placeholder only if realtime hasn't
                             // delivered the real row yet (matched by user + round).
                             ...(optimisticArg &&
-                                !debate.arguments.some(
+                                !visibleArguments.some(
                                     (a) =>
                                         a.user_id === optimisticArg.user_id &&
                                         a.round_number === optimisticArg.round_number

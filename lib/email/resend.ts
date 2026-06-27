@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { ORACLE_USER_ID } from "@/lib/ai/oracle";
 
 // Turn email notifications (#3).
 // Self-contained + fail-safe: if RESEND_API_KEY is unset, this no-ops so the
@@ -52,6 +53,9 @@ export async function sendTurnNotification(debateId: string): Promise<boolean> {
         if (!debate || debate.status !== "active" || !debate.current_turn) return false;
 
         const activeId = debate.current_turn;
+        // The Oracle never gets emailed — its move is driven by the oracle-turn
+        // route / maintenance cron, not by a notification.
+        if (activeId === ORACLE_USER_ID) return false;
         const opponentId =
             debate.player_a_id === activeId ? debate.player_b_id : debate.player_a_id;
 

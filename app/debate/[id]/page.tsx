@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DebateRoom } from "@/components/debate/DebateRoom";
+import { authorizeAndSanitizeDebate } from "@/lib/debates/visibility";
 
 export async function generateMetadata({
     params,
@@ -57,5 +58,11 @@ export default async function DebatePage({
 
     if (error || !debate) redirect("/dashboard");
 
-    return <DebateRoom debate={debate} currentUserId={user.id} username={profile?.username ?? null} />;
+    // Authorize + redact before handing the debate to the client. A private
+    // debate is hidden from non-participants; a live opponent's in-flight
+    // argument is withheld until the viewer has submitted theirs.
+    const safeDebate = authorizeAndSanitizeDebate(debate, user.id);
+    if (!safeDebate) redirect("/dashboard");
+
+    return <DebateRoom debate={safeDebate} currentUserId={user.id} username={profile?.username ?? null} />;
 }
