@@ -6,7 +6,9 @@ import { CircuitBackground } from "@/components/CircuitBackground";
 import { fetchDebateHistory, type DebateHistoryEntry } from "@/lib/debates";
 import { BlockButton } from "@/components/safety/BlockButton";
 import { Achievements } from "@/components/profile/Achievements";
+import { MindArchetype } from "@/components/profile/MindArchetype";
 import { getTitle } from "@/lib/achievements";
+import { aggregateArchetype } from "@/lib/ai/archetype";
 
 // Oracle system user (migration 0006) — never offer to block the AI.
 const ORACLE_USER_ID = "00000000-0000-0000-0000-0000000000a1";
@@ -112,7 +114,7 @@ export default async function ProfilePage({
         // count, so this stays a cheap bounded read.
         supabase
             .from("arguments")
-            .select("fallacies_found")
+            .select("fallacies_found, score_clarity, score_evidence, score_logic, score_rebuttal, fallacy_penalty")
             .eq("user_id", profile.id)
             .eq("scoring_status", "done")
             .limit(500),
@@ -134,6 +136,12 @@ export default async function ProfilePage({
             const f = a.fallacies_found as unknown;
             return Array.isArray(f) ? f.length === 0 : true;
         }).length ?? 0;
+
+    // Mind archetype (ROADMAP §2.5 force 3): a pure aggregate over the same
+    // scored-arguments read. Null below the reveal threshold (~5 arguments).
+    const ARCHETYPE_MIN_SAMPLE = 5;
+    const archetype = aggregateArchetype(scoredArgs ?? [], ARCHETYPE_MIN_SAMPLE);
+    const isOwnProfile = !!user && user.id === profile.id;
 
     const eloSeries =
         eloRows && eloRows.length > 0
@@ -185,8 +193,18 @@ export default async function ProfilePage({
                     <ProfileStat label="Win Rate" value={`${winRate}%`} accent="var(--teal)" teal />
                 </div>
 
-                {/* Elo history sparkline */}
+                {/* Mind archetype — the identity payload (§2.5 force 3) */}
                 <div className="reveal-3" style={{ marginBottom: "2.5rem" }}>
+                    <MindArchetype
+                        archetype={archetype}
+                        scoredCount={scoredArguments}
+                        minSample={ARCHETYPE_MIN_SAMPLE}
+                        isOwnProfile={isOwnProfile}
+                    />
+                </div>
+
+                {/* Elo history sparkline */}
+                <div className="reveal-4" style={{ marginBottom: "2.5rem" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
                         <div className="gold-rule-subtle" style={{ flex: 1 }} />
                         <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.60rem", letterSpacing: "0.28em", color: "var(--text-gold)", textTransform: "uppercase", whiteSpace: "nowrap" }}>
@@ -220,7 +238,7 @@ export default async function ProfilePage({
                 </div>
 
                 {/* Achievements */}
-                <div className="reveal-4" style={{ marginBottom: "2.5rem" }}>
+                <div className="reveal-5" style={{ marginBottom: "2.5rem" }}>
                     <Achievements
                         input={{
                             elo,
@@ -233,7 +251,7 @@ export default async function ProfilePage({
                 </div>
 
                 {/* Recent debates */}
-                <div className="reveal-5">
+                <div className="reveal-6">
                     <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
                         <div className="gold-rule-subtle" style={{ flex: 1 }} />
                         <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.60rem", letterSpacing: "0.28em", color: "var(--text-gold)", textTransform: "uppercase", whiteSpace: "nowrap" }}>

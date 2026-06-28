@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NotificationBell } from "@/components/NotificationBell";
+import { PushManager } from "@/components/push/PushManager";
 
 interface NavbarProps {
     /** The currently authenticated user's username, or null if logged out */
@@ -235,6 +236,24 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                         ROAST
                     </Link>
 
+                    {/* Daily "spot the fallacy" mini-game (ROADMAP §2.4 item 4) */}
+                    <Link
+                        href="/fallacy"
+                        style={{
+                            fontFamily: "var(--font-cinzel), serif",
+                            fontSize: "0.65rem",
+                            letterSpacing: "0.14em",
+                            color: "var(--text-secondary)",
+                            textDecoration: "none",
+                            padding: "0.45rem 0.5rem",
+                            transition: "color 200ms ease",
+                        }}
+                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
+                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
+                    >
+                        FALLACY
+                    </Link>
+
                     {/* Join debate — desktop inline icon-button */}
                     {!hideJoinBar && (
                         <button
@@ -277,6 +296,9 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                             <span>JOIN</span>
                         </button>
                     )}
+
+                    {/* Push notification opt-in (logged-in only; self-hides if unsupported/unconfigured) */}
+                    {username && !hideAuth && <PushManager />}
 
                     {/* In-app notification bell (logged-in only) */}
                     {username && !hideAuth && <NotificationBell />}

@@ -261,6 +261,22 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                             </p>
                         </div>
                     </Link>
+
+                    {/* Spot the Fallacy — daily 30s mini-game (ROADMAP §2.4 item 4) */}
+                    <Link href="/fallacy" style={{ textDecoration: "none" }}>
+                        <div className="glass-card" style={{ padding: "1.75rem 1.5rem", borderTop: "1px solid var(--gold)", cursor: "pointer", height: "100%" }}>
+                            <ActionIcon color="var(--gold)">
+                                <circle cx="11" cy="11" r="7" strokeWidth="1.5" />
+                                <path d="M21 21l-4.35-4.35" strokeWidth="1.5" strokeLinecap="round" />
+                            </ActionIcon>
+                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.9rem", fontWeight: 600, letterSpacing: "0.06em", color: "var(--text-primary)", marginBottom: "0.4rem" }}>
+                                Spot the Fallacy
+                            </p>
+                            <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.88rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                A 30-second daily trial. Name the hidden flaw, keep your streak.
+                            </p>
+                        </div>
+                    </Link>
                 </div>
 
                 {/* Chronicle divider */}

@@ -883,10 +883,16 @@ export function DebateRoom({
 
                                     <div className="result-actions" style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
                                         {/* #5: Primary share = X/Twitter intent. The /api/og image
-                                            renders the preview card automatically from the URL. */}
+                                            renders the upgraded verdict card automatically from the
+                                            URL. Verdict-led, self-knowledge-framed text (§2.5). */}
                                         <a
                                             href={shareUrl ? `https://twitter.com/intent/tweet?text=${encodeURIComponent(
-                                                `I just debated "${debate.topics.title}" on Argos | Score: ${myScore}-${opponentScore}`
+                                                (won
+                                                    ? `The Oracle ruled in my favour ${myScore}–${opponentScore} on "${debate.topics.title}".`
+                                                    : tied
+                                                        ? `The Oracle called it a draw ${myScore}–${opponentScore} on "${debate.topics.title}".`
+                                                        : `The Oracle scored my argument ${myScore}–${opponentScore} on "${debate.topics.title}".`
+                                                ) + " See how it judges how you think →"
                                             )}&url=${encodeURIComponent(shareUrl)}` : "#"}
                                             target="_blank"
                                             rel="noopener noreferrer"

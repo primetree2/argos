@@ -3,6 +3,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { backfillIpHash, flagSybilDebate } from "@/lib/safety/fingerprint";
 import { sendMatchNotification } from "@/lib/email/resend";
 import { createNotification } from "@/lib/notifications";
+import { sendPush } from "@/lib/push/send";
 import { NextResponse } from "next/server";
 
 // Service-role client for the creator notification insert (bypasses RLS; end
@@ -130,6 +131,13 @@ export async function POST(
             body: "Your debate is live — it's your turn to open.",
             link: `/debate/${debate.id}`,
         });
+        // Best-effort web push alongside the in-app bell (ROADMAP 2.4 item 3).
+        // Fire-and-forget; no-ops entirely if push isn't configured/installed.
+        sendPush(challenge.creator_id, {
+            title: `${who} joined your challenge`,
+            body: "Your debate is live — it's your turn to open.",
+            url: `/debate/${debate.id}`,
+        }).catch(() => { });
     } catch {
         /* fail-open — a missing notification must never break the join */
     }

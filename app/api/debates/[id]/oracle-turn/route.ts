@@ -161,5 +161,13 @@ export async function POST(
         /* recovered asynchronously by the queue / maintenance requeue */
     }
 
+    // If the Oracle's reply handed the turn back to the human (a multi-round
+    // vs-Oracle debate that is still active), nudge them via web push
+    // (ROADMAP 2.4 item 3). Fire-and-forget + fail-open; notifyTurn itself
+    // skips non-active debates and never pushes the Oracle. On the final round
+    // the debate flips to scoring, so this correctly no-ops.
+    const { notifyTurn } = await import("@/lib/push/turn");
+    void notifyTurn(id);
+
     return NextResponse.json({ ok: true, argumentId });
 }

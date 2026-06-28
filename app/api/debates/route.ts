@@ -3,6 +3,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { ORACLE_USER_ID } from "@/lib/ai/oracle";
 import { getEntitlements, isActionAllowed } from "@/lib/billing/limits";
 import { fetchIsPro, recordUsage, usageToday } from "@/lib/billing/usage";
+import { getOrCreateTopic } from "@/lib/topics";
 import { NextResponse } from "next/server";
 
 // Service-role client: used only to count a user's recent debates for rate
@@ -128,15 +129,20 @@ export async function POST(request: Request) {
         }
     }
 
-    // Create topic first.
-    const { data: topicData, error: topicError } = await supabase
-        .from("topics")
-        .insert({ title: trimmedTopic, source: "user" })
-        .select()
-        .single();
+    // Resolve the topic, reusing an existing row for this title (the unique
+    // constraint from 0004 means a blind insert would throw on a repeat title,
+    // which Lightning hits constantly by seeding the Daily Topic).
+    const { data: topicData, error: topicError } = await getOrCreateTopic(
+        supabase,
+        trimmedTopic,
+        { source: "user" }
+    );
 
-    if (topicError) {
-        return NextResponse.json({ error: topicError.message }, { status: 500 });
+    if (topicError || !topicData) {
+        return NextResponse.json(
+            { error: topicError ?? "Could not create topic." },
+            { status: 500 }
+        );
     }
 
     // Create debate. A vs-Oracle debate has no "waiting for opponent" phase:
@@ -161,8 +167,13 @@ export async function POST(request: Request) {
         .single();
 
     if (debateError) {
-        // Don't leave an orphaned topic behind if the debate insert fails.
-        await serviceClient.from("topics").delete().eq("id", topicData.id);
+        // Don't leave an orphaned topic behind if the debate insert fails — but
+        // ONLY delete it if we created it just now. Topics are shared across
+        // debates (deduped by title), so deleting a reused row would orphan
+        // other debates.
+        if (topicData.created) {
+            await serviceClient.from("topics").delete().eq("id", topicData.id);
+        }
         return NextResponse.json({ error: debateError.message }, { status: 500 });
     }
 
@@ -170,5 +181,5 @@ export async function POST(request: Request) {
     // response). Powers the future paywall + analytics; no-op pre-0015.
     await recordUsage(serviceClient, user.id, meteredAction);
 
-    return NextResponse.json({ debate, topic: topicData });
+    return NextResponse.json({ debate, topic: { id: topicData.id, title: trimmedTopic } });
 }

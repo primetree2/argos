@@ -158,6 +158,18 @@ export async function POST(
         } catch {
             /* recovered by maintenance cron oracle backstop */
         }
+    } else if (
+        postState?.status === "active" &&
+        postState?.current_turn &&
+        postState.current_turn !== ORACLE_USER_ID &&
+        postState.current_turn !== user.id
+    ) {
+        // Human-vs-human: the turn just flipped to the opponent — nudge them via
+        // web push (ROADMAP 2.4 item 3). Fire-and-forget + fail-open: no-ops if
+        // push isn't configured. Skipped on the final round (status -> scoring)
+        // and for the Oracle's turn (handled above).
+        const { notifyTurn } = await import("@/lib/push/turn");
+        void notifyTurn(id);
     }
     // NOTE: per-turn emails were removed (too noisy). The only gameplay email
     // is the single connection email sent when players are matched / a

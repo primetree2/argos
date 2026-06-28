@@ -3,6 +3,162 @@
 > Paste this entire file at the start of ANY new LLM chat to restore full context instantly.
 > Only the section `## 15. Current Status
 
+**Session:** Mind archetype on the profile (ROADMAP §2.5 force 3) (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Mind archetype on the profile (ROADMAP §2.5 force 3 — identity & labeling,
+  the retention multiplier).** A user's profile now shows the "mind archetype"
+  the Oracle reads from their REAL score pattern (The Logician / The Closer /
+  The Rhetorician / The Empiricist / The Provocateur), with a strength + a
+  "grow" (weakness) dimension. **Pure computation over data already stored — NO
+  migration, NO schema, NO Gemini.**
+  - `lib/ai/archetype.ts` gains `aggregateArchetype(rows, minSample=5)` — a PURE
+    helper that averages a user's per-argument dimension scores into one
+    `ArchetypeInput` and runs the existing `getArchetype` mapping, returning
+    null below the sample threshold so the label only appears once earned.
+  - `app/profile/[username]/page.tsx` extends its existing bounded scored-
+    arguments read to also select the dimension scores + `fallacy_penalty`,
+    computes the archetype, and renders it between the stat grid and the rating
+    trajectory. Reveal animations re-staggered (1–6).
+  - `components/profile/MindArchetype.tsx` — server-rendered identity card
+    (Oracle Terminal: gold glass, `text-shimmer` title, strength/grow pills);
+    below ~5 scored arguments it shows an "archetype not yet revealed" teaser
+    (own-profile copy nudges "keep debating").
+  - **Runnable as-is.** Reuses the archetype engine already powering `/roast`.
+
+#### Prior checkpoint
+**Session:** Sharper share scorecard — OG verdict card + fallacy call-out (ROADMAP §2.4 item 5) (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Sharpened the shareable scorecard (ROADMAP §2.4 item 5 — the only built-in
+  growth loop).** Redesigned `app/api/og/route.tsx` from the generic green/black
+  sans-serif card into a branded **Oracle Terminal** verdict card (void bg, gold
+  accents, gold rule, serif), with “◆ THE ORACLE’S VERDICT” framing, per-player
+  scores tagged FOR/AGAINST, and a clear winner line.
+  - **NEW “sharpest fallacy” call-out:** the OG card now surfaces the single
+    highest-penalty fallacy detected across the debate (name + the offending
+    quote) — the spicy, shareable sting the roadmap asks for. The OG query now
+    also selects `fallacy_penalty, fallacies_found`.
+  - **Still public-safe:** a private or missing debate renders the generic brand
+    card (no topic/score leak). Still 1200×630, flexbox-only (the `ImageResponse`
+    constraint — no grid).
+  - **Sharper share text:** the result-card X intent in
+    `components/debate/DebateRoom.tsx` now leads with the verdict + the
+    self-knowledge hook (§2.5) instead of a flat “Score: X-Y”, and is
+    outcome-aware (win/draw/loss). It attaches the same debate URL, so the
+    upgraded OG card renders as the preview.
+  - **NO migration, NO schema, NO env change.** Runnable as-is.
+
+#### Prior checkpoint
+**Session:** Daily “spot the fallacy” mini-game (ROADMAP §2.4 item 4) (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Daily “spot the fallacy” 30s mini-game (ROADMAP §2.4 item 4 / §2.5 force 2).**
+  A single-player, daily, shareable puzzle with a streak — daily-active +
+  loss-aversion retention. **NO Gemini, NO DB, NO migration, NO env.**
+  - `lib/fallacyGame.ts` — a curated round bank using the judge’s EXACT
+    10-fallacy taxonomy (§7). A deterministic UTC-date seed picks today’s round
+    (`getDailyFallacyRound`), so everyone gets the same puzzle today and it
+    resets at 00:00 UTC. Pure, no I/O.
+  - `app/fallacy/page.tsx` (server, auth-gated) + `app/fallacy/loading.tsx`
+    (`OracleLoader`).
+  - `components/fallacy/FallacyGame.tsx` (client island): 30s timer (timeout =
+    miss), 4 options, reveal with the explanation, and a **localStorage daily
+    streak** (fail-safe, no backend; advances once per UTC day, resets on a
+    miss) + an X share intent. Oracle Terminal aesthetic + §2.5 force-1 reveal
+    pacing.
+  - Surfaced via a `FALLACY` Navbar link (after ROAST) and a “Spot the Fallacy”
+    dashboard action card.
+  - **Runnable as-is.** A future DB-backed streak/leaderboard is an optional
+    later enhancement; v1 is intentionally client-only + free.
+
+#### Prior checkpoint
+**Session:** “Your turn” web-push nudges (ROADMAP §2.4 item 3 follow-up) (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **“Your turn” web push.** Extends the push layer so a player is nudged when
+  it becomes their move — the core async-retention reason push exists. NEW
+  `lib/push/turn.ts` `notifyTurn(debateId)`: a FAIL-OPEN helper that pushes the
+  player whose turn it now is, but ONLY when the debate is still `active` and
+  `current_turn` is a real HUMAN (never the Oracle system user, never null). It
+  resolves its own service client + debate state, so callers pass only the
+  debate id; `sendPush` itself no-ops when push isn’t configured, so the whole
+  chain is harmless before VAPID/web-push setup. Wired into:
+  - `app/api/debates/[id]/argument/route.ts` — after a human submits and the
+    turn flips to a HUMAN opponent (the existing `postState` check is reused;
+    skipped for the Oracle’s turn and for the final round that goes to
+    `scoring`, and never pushes the submitter).
+  - `app/api/debates/[id]/oracle-turn/route.ts` — after the Oracle replies and
+    the turn flips back to the human in a multi-round vs-Oracle debate
+    (no-ops on the last round, which finalizes).
+  Fire-and-forget throughout. NO migration, NO schema change. Runnable as-is.
+
+#### Prior checkpoint
+**Session:** Free web push / PWA (ROADMAP §2.4 item 3) (FREE) + Lightning topic-dedup bugfix
+**Date:** 2026-06-28
+
+### This checkpoint
+- 🐛 **Fixed: Lightning (and any repeated topic title) failed with
+  `duplicate key value violates unique constraint "topics_title_unique"`.**
+  Migration 0004 added `UNIQUE(topics.title)` and made the SQL `match_player`
+  reuse topics via `insert ... on conflict (title) do nothing`, but the
+  app-layer routes still did a blind `insert` into `topics`. Lightning hit this
+  every time after the first run because it seeds the topic from the Daily
+  Topic. New `lib/topics.ts` `getOrCreateTopic()` mirrors the 0004 pattern
+  (upsert-ignore-on-conflict, then select) and returns `{ id, created }`;
+  `app/api/debates/route.ts` + `app/api/challenges/route.ts` now use it. The
+  orphaned-topic cleanup on a failed debate insert only deletes a topic we
+  actually just created (`created === true`), so it can never delete a shared/
+  reused topic row. NO migration, NO schema change.
+
+- ✅ **Free web push + installable PWA (ROADMAP §2.4 item 3).** Mobile-first
+  re-engagement using the free web-push (VAPID) standard — NO managed service.
+  **FAIL-OPEN on every axis: the app is fully runnable BEFORE or AFTER
+  migration 0019, and BEFORE or AFTER `npm install web-push` / setting the
+  VAPID env vars.**
+  - **⚠️ Run `supabase/migrations/0019_push_subscriptions.sql`** — ADDITIVE +
+    **IDEMPOTENT (safe to run twice)**. Adds a `push_subscriptions` table
+    (own-row RLS: users read/delete only their own; server-role inserts).
+  - `lib/push/send.ts` `sendPush(recipientId, {title, body, url})` —
+    **dynamically imports** `web-push` so a missing package can't break the
+    build; no-ops without the package, without VAPID env, or without 0019.
+    Prunes dead (404/410) subscriptions. Returns count delivered.
+  - `lib/push/subscriptions.ts` — fail-open `saveSubscription` (upsert by
+    endpoint) / `deleteSubscription` helpers.
+  - `app/api/push/subscribe` + `app/api/push/unsubscribe` route handlers
+    (service-role writes; auth-gated; fail-open).
+  - `app/manifest.ts` — web app manifest (Oracle Terminal palette: void bg,
+    gold theme) for home-screen install (a push precondition on iOS 16.4+).
+  - `public/sw.js` — minimal service worker: `push` shows the notification,
+    `notificationclick` focuses an existing tab or opens the target URL. No
+    offline precaching (avoids stale shells).
+  - `components/push/PushManager.tsx` — client island in the Navbar
+    (logged-in only). **Renders NOTHING** unless the browser supports
+    SW+Push AND `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is set, so it's invisible
+    until push is configured. Registers `/sw.js`, toggles subscribe/
+    unsubscribe, shows an iOS “Add to Home Screen first” hint. Bell-icon,
+    Oracle aesthetic, all errors soft-handled.
+  - **Wired in:** the challenge-accept route now best-effort `sendPush`es the
+    creator alongside the in-app bell (fire-and-forget, never blocks the join).
+  - `next.config.ts` adds `sw.js` no-cache + correct content-type headers.
+  - `package.json` adds `web-push` + `@types/web-push` (install locally/on
+    deploy; the dynamic import keeps the build green until you do).
+  - **Setup (all free, optional — app runs without it):**
+    1. `npm install` (picks up `web-push`).
+    2. `npx web-push generate-vapid-keys` → set `NEXT_PUBLIC_VAPID_PUBLIC_KEY`,
+       `VAPID_PRIVATE_KEY` (and optionally `VAPID_CONTACT_EMAIL`) in Vercel.
+    3. Run migration 0019 in Supabase.
+    4. Add `public/icon-192.png` + `public/icon-512.png` (any square logo) so
+       the install icon + notification icon render. The app is fully runnable
+       without these; only the icons are missing until added.
+  - **NEXT checkpoint:** wire `sendPush` into the “your turn” path
+    (submit-argument / maintenance cron) for async-turn nudges.
+
+#### Prior checkpoint
 **Session:** Open-Challenges dashboard discovery panel (FREE)
 **Date:** 2026-06-28
 

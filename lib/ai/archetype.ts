@@ -69,6 +69,50 @@ const FALLACY_PRONE: Omit<Archetype, "strength" | "weakness"> = {
         "You argue with fire — but the Oracle caught the shortcuts. Cut the fallacies and that fire becomes force.",
 };
 
+// Per-argument scored row used to aggregate a profile-level archetype.
+export interface ScoredDims {
+    score_clarity: number | null;
+    score_evidence: number | null;
+    score_logic: number | null;
+    score_rebuttal: number | null;
+    fallacy_penalty: number | null;
+}
+
+// Aggregate a user's scored arguments into ONE archetype (ROADMAP §2.5 force 3).
+//
+// PURE: no I/O. Averages each dimension across all scored arguments and feeds
+// the result to getArchetype. Returns null below `minSample` so the label only
+// appears once it's earned (the roadmap suggests ~5 debates). getArchetype only
+// compares relative magnitudes, so averaging is a faithful aggregate.
+export function aggregateArchetype(
+    rows: ScoredDims[],
+    minSample = 5
+): (Archetype & { sample: number }) | null {
+    const n = rows.length;
+    if (n < minSample) return null;
+
+    const sum = rows.reduce(
+        (acc, r) => ({
+            clarity: acc.clarity + (r.score_clarity ?? 0),
+            evidence: acc.evidence + (r.score_evidence ?? 0),
+            logic: acc.logic + (r.score_logic ?? 0),
+            rebuttal: acc.rebuttal + (r.score_rebuttal ?? 0),
+            fallacy_penalty: acc.fallacy_penalty + (r.fallacy_penalty ?? 0),
+        }),
+        { clarity: 0, evidence: 0, logic: 0, rebuttal: 0, fallacy_penalty: 0 }
+    );
+
+    const avg: ArchetypeInput = {
+        clarity: sum.clarity / n,
+        evidence: sum.evidence / n,
+        logic: sum.logic / n,
+        rebuttal: sum.rebuttal / n,
+        fallacy_penalty: sum.fallacy_penalty / n,
+    };
+
+    return { ...getArchetype(avg), sample: n };
+}
+
 export function getArchetype(s: ArchetypeInput): Archetype {
     const dims: { key: DimKey; value: number }[] = [
         { key: "clarity", value: s.clarity },

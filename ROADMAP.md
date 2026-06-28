@@ -180,11 +180,30 @@ Do these in order; each is free-tier and reuses existing infrastructure:
    + `OpenChallengesPanel` — surfaces a few recent open challenges with their format pills
    so a cold user has a one-tap entry instead of a blank topic box (§2.5 force 5). No
    migration; renders nothing when empty.)*
-3. **Free web push / PWA.** Service worker + web-push (VAPID) for async turn + "someone
-   joined your challenge" + "your turn" nudges. Mobile-first, free, no managed service.
-4. **Daily single-player "spot the fallacy" 30s mini-game.** Reuses the judge; daily-active
-   + viral + shareable; no opponent needed.
+3. **Free web push / PWA.** ✅ DONE (shipped). Service worker (`public/sw.js`) + the free
+   web-push (VAPID) standard + an installable manifest (`app/manifest.ts`), wired so the
+   challenge-creator gets a push when someone joins (alongside the in-app bell). Migration
+   **0019** adds `push_subscriptions` (additive + idempotent, own-row RLS); `lib/push/send.ts`
+   **dynamically imports** `web-push` and no-ops without the package / VAPID env / 0019, so
+   the app is fully runnable before OR after setup. The Navbar `PushManager` opt-in renders
+   nothing until push is supported + `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is set. *Cost: 0.*
+   *(Follow-up ✅ DONE: `lib/push/turn.ts` `notifyTurn()` nudges the player whose turn it
+   now is — wired into the human-submit + oracle-reply paths, fail-open, human-only.
+   Remaining: add `public/icon-192.png` + `icon-512.png` for the install/notification icon;
+   see `PUSH_SETUP.md`.)*
+4. **Daily single-player "spot the fallacy" 30s mini-game.** ✅ DONE (shipped). `/fallacy`:
+   a deterministic daily round (`lib/fallacyGame.ts`, UTC-seeded from a curated bank using
+   the judge's exact 10-fallacy taxonomy — same puzzle for everyone, resets 00:00 UTC), a
+   30s timer, single guess, reveal + explanation, and a **localStorage daily streak**
+   (§2.5 force 2; client-only, fail-safe, no backend) + X share. Surfaced via a `FALLACY`
+   nav link + dashboard card. NO Gemini / DB / migration. *Cost: 0.* *(Optional later: a
+   DB-backed streak/leaderboard.)*
 5. **Sharpen the share scorecard** (`/api/og` + recap card) — the only built-in growth loop.
+   ✅ DONE (shipped). `app/api/og/route.tsx` redesigned into a branded Oracle Terminal
+   verdict card (gold/void, “◆ The Oracle’s Verdict”, FOR/AGAINST scores, winner line) +
+   a **sharpest-fallacy call-out** (highest-penalty fallacy name + quote). Result-card X
+   share text is now verdict-led + self-knowledge-framed (§2.5) and outcome-aware. Still
+   public-safe (private debates render the brand card). NO migration. *Cost: 0.*
 
 > Then, and only then, return to the depth/retention items already catalogued below. The
 > fastest path to "popular + revenue" is to stop adding depth and start compressing the
@@ -225,7 +244,11 @@ depth; self-knowledge is the hook.
    nudge after ~2 idle days, and a weekly **"your mind this week"** recap (fallacies you
    commit most, strongest dimension). The recap is also the best ORGANIC share artifact —
    it's *about them*, far better than a single scorecard.
-3. **Identity & labeling (the retention multiplier most debate apps miss).** After ~5
+3. **Identity & labeling (the retention multiplier most debate apps miss).** ✅ DONE
+   (shipped on the profile). `aggregateArchetype()` (pure, over stored scores) +
+   `components/profile/MindArchetype.tsx` show each orator's archetype + a strength/grow
+   dimension after ~5 scored arguments, reusing the existing `getArchetype` engine that
+   already powers `/roast`. NO migration / Gemini. _Original note below._ After ~5
    debates, the Oracle assigns a **mind archetype** derived from the user's real score
    pattern — "The Logician" (high logic, low rebuttal), "The Closer" (high rebuttal), "The
    Rhetorician" (high clarity, weak evidence), etc. Forer/Barnum effect + self-perception
@@ -410,16 +433,20 @@ forward only when money is available.
      timeout is only auto-forfeited at that cadence. Live play is unaffected (the client
      timer + normal submit flow drive the debate); only an abandoned blitz turn waits for
      the next cron tick. A faster trigger comes with Vercel Pro cron (Phase 2 PAID).
-4. **Better viral share artifact.** You already generate an OG image (`/api/og`). Add a
-   "debate recap" share card that highlights the score reveal + the best fallacy call-out.
-   (Animated video clips are a PAID/later item — static first.) *Cost: 0.*
-   *(§2.4 NEXT-UP item 5 — pull forward; the only built-in growth loop.)*
-4b. **Daily single-player "spot the fallacy" mini-game.** 30-second, single-player,
-   shareable, no opponent — reuses the existing judge. Daily-active + viral + spectator→
-   player funnel fuel. *Cost: 0.* *(§2.4 NEXT-UP item 4.)*
-4c. **Free web push / PWA.** Service worker + the free web-push (VAPID) standard for async
-   turn nudges, "someone joined your challenge," and "your turn." Mobile-first retention; no
-   managed service. *Cost: 0.* *(§2.4 NEXT-UP item 3 — moved here from PAID.)*
+4. **Better viral share artifact.** ✅ DONE. `/api/og` redesigned into a branded Oracle
+   Terminal verdict card that highlights the score reveal + the **sharpest fallacy
+   call-out** (name + offending quote); the result-card X share text is verdict-led and
+   self-knowledge-framed (§2.5). Still public-safe. (Animated video clips remain a
+   PAID/later item.) *Cost: 0.* *(§2.4 NEXT-UP item 5.)*
+4b. **Daily single-player "spot the fallacy" mini-game.** ✅ DONE. `/fallacy` — 30s,
+   single-player, shareable, daily UTC-seeded round from a curated bank (judge's 10-fallacy
+   taxonomy), with a client-side daily streak. NO Gemini / DB / migration. *Cost: 0.*
+   *(§2.4 NEXT-UP item 4.)*
+4c. **Free web push / PWA.** ✅ DONE. Service worker + the free web-push (VAPID) standard +
+   installable manifest, fail-open throughout (migration 0019 `push_subscriptions`;
+   `lib/push/send.ts` dynamic-imports `web-push` and no-ops when unconfigured). Wired into
+   the challenge-join path; the Navbar opt-in self-hides until configured. *Cost: 0.*
+   *(§2.4 NEXT-UP item 3 — moved here from PAID.)*
 5. **Daily Topic global leaderboard.** ✅ DONE. `/daily` ranks everyone who completed a
    debate on today's Daily Topic by total argument score (with debates + wins), cached
    (`lib/cache/dailyLeaderboard.ts`, 120s, tag `daily-leaderboard`, invalidated on any

@@ -1,233 +1,238 @@
 import { ImageResponse } from "next/og";
 import { createClient } from "@supabase/supabase-js";
 
+// Shareable "Oracle's verdict" scorecard (ROADMAP §2.4 item 5 — the built-in
+// growth loop). Oracle Terminal aesthetic + the sharpest fallacy call-out.
+//
+// PUBLIC + UNAUTHENTICATED: it must never expose a private debate's topic or
+// scores. A private/missing debate falls back to the generic brand card.
 
 const serviceClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Oracle Terminal palette (mirrors globals.css / the email template).
+const VOID = "#07080a";
+const SURFACE = "#101216";
+const GOLD = "#c9a84c";
+const GOLD_BRIGHT = "#e8c46a";
+const TEAL = "#5fb3b3";
+const RED = "#e0564c";
+const TEXT = "#f5efe0";
+const MUTED = "#9a8c78";
+const DIM = "#5c5648";
+
+const SIZE = { width: 1200, height: 630 } as const;
+
+function brandCard() {
+    return new ImageResponse(
+        (
+            <div
+                style={{
+                    background: VOID,
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontFamily: "serif",
+                }}
+            >
+                <span style={{ color: GOLD, fontSize: 22, letterSpacing: 12, textTransform: "uppercase" }}>
+                    ◆ The Oracle Debate Arena
+                </span>
+                <span style={{ color: TEXT, fontSize: 92, fontWeight: 700, letterSpacing: 4, marginTop: 12 }}>
+                    ARGOS
+                </span>
+                <span style={{ color: MUTED, fontSize: 24, fontStyle: "italic", marginTop: 16 }}>
+                    Where arguments are judged by an ancient intelligence.
+                </span>
+            </div>
+        ),
+        SIZE
+    );
+}
+
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const debateId = searchParams.get("debate_id");
 
-    if (!debateId) {
-        return new ImageResponse(
-            (
-                <div
-                    style={{
-                        background: "#000",
-                        width: "100%",
-                        height: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                    }}
-                >
-                    <span style={{ color: "white", fontSize: 48, fontWeight: "bold" }}>
-                        Argos
-                    </span>
-                </div>
-            ),
-            { width: 1200, height: 630 }
-        );
-    }
+    if (!debateId) return brandCard();
 
-    // Fetch debate data
     const { data: debate } = await serviceClient
         .from("debates")
         .select(`
       *,
-      topics (title),
-      arguments (user_id, score_total)
+      topics (title, category),
+      arguments (user_id, score_total, fallacy_penalty, fallacies_found)
     `)
         .eq("id", debateId)
         .single();
 
-    // Treat a private debate the same as a missing one: this endpoint is public
-    // and unauthenticated, so it must never expose a private match's topic or
-    // scores through a shareable image URL.
-    if (!debate || debate.is_public === false) {
-        return new ImageResponse(
-            (
-                <div
-                    style={{
-                        background: "#000",
-                        width: "100%",
-                        height: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                    }}
-                >
-                    <span style={{ color: "white", fontSize: 48, fontWeight: "bold" }}>Argos</span>
-                </div>
-            ),
-            { width: 1200, height: 630 }
-        );
-    }
+    if (!debate || debate.is_public === false) return brandCard();
 
     const topicTitle =
         (debate.topics as unknown as { title?: string } | null)?.title ?? "Untitled debate";
 
-    // Fetch player usernames
     const { data: playerA } = await serviceClient
         .from("users")
         .select("username, elo_rating")
         .eq("id", debate.player_a_id)
         .single();
 
-    const { data: playerB } = debate.player_b_id ? await serviceClient
-        .from("users")
-        .select("username, elo_rating")
-        .eq("id", debate.player_b_id)
-        .single() : { data: null };
+    const { data: playerB } = debate.player_b_id
+        ? await serviceClient
+            .from("users")
+            .select("username, elo_rating")
+            .eq("id", debate.player_b_id)
+            .single()
+        : { data: null };
 
-    // Calculate scores
-    type ArgRow = { user_id: string; score_total: number | null };
+    type Fallacy = { name?: string; quote?: string };
+    type ArgRow = {
+        user_id: string;
+        score_total: number | null;
+        fallacy_penalty: number | null;
+        fallacies_found: Fallacy[] | null;
+    };
     const debateArgs = (debate.arguments ?? []) as ArgRow[];
 
     const scoreA = debateArgs
         .filter((a) => a.user_id === debate.player_a_id)
         .reduce((sum, a) => sum + (a.score_total ?? 0), 0);
-
     const scoreB = debateArgs
         .filter((a) => a.user_id === debate.player_b_id)
         .reduce((sum, a) => sum + (a.score_total ?? 0), 0);
 
-    const winnerName =
-        debate.winner_id
-            ? debate.winner_id === debate.player_a_id
-                ? playerA?.username
-                : debate.winner_id === debate.player_b_id
-                    ? playerB?.username
-                    : null
-            : scoreA > scoreB
-                ? playerA?.username
-                : scoreB > scoreA
-                    ? playerB?.username
-                    : null;
+    const aWins = scoreA > scoreB;
+    const bWins = scoreB > scoreA;
+
+    const winnerName = debate.winner_id
+        ? debate.winner_id === debate.player_a_id
+            ? playerA?.username
+            : debate.winner_id === debate.player_b_id
+                ? playerB?.username
+                : null
+        : aWins
+            ? playerA?.username
+            : bWins
+                ? playerB?.username
+                : null;
+
+    // Player A's stored side; B is the opposite.
+    const sideA = (debate.player_a_side as "FOR" | "AGAINST") ?? "FOR";
+    const sideB = sideA === "FOR" ? "AGAINST" : "FOR";
+
+    // The sharpest fallacy across the whole debate: the argument with the
+    // largest penalty contributes its first named fallacy. This is the spicy,
+    // shareable call-out (ROADMAP §2.4 item 5). Penalties are <= 0, so a more
+    // negative value is "sharper".
+    let sharpest: { name: string; quote: string } | null = null;
+    let worstPenalty = 0;
+    for (const a of debateArgs) {
+        const pen = a.fallacy_penalty ?? 0;
+        const first = a.fallacies_found?.[0];
+        if (first?.name && pen < worstPenalty) {
+            worstPenalty = pen;
+            sharpest = { name: first.name, quote: (first.quote ?? "").trim() };
+        }
+    }
+    if (sharpest && sharpest.quote.length > 90) {
+        sharpest.quote = sharpest.quote.slice(0, 87) + "…";
+    }
+
+    const playerBlock = (
+        name: string,
+        side: "FOR" | "AGAINST",
+        score: number,
+        won: boolean
+    ) => (
+        <div
+            style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                flex: 1,
+                background: won ? "rgba(201,168,76,0.10)" : SURFACE,
+                border: `2px solid ${won ? GOLD : "#26282e"}`,
+                borderRadius: 16,
+                padding: "22px 28px",
+            }}
+        >
+            <span style={{ color: won ? GOLD_BRIGHT : MUTED, fontSize: 22, letterSpacing: 1 }}>
+                {name}
+            </span>
+            <span style={{ color: side === "FOR" ? GOLD : TEAL, fontSize: 13, letterSpacing: 4, marginTop: 4, textTransform: "uppercase" }}>
+                {side}
+            </span>
+            <span style={{ color: won ? GOLD : TEXT, fontSize: 72, fontWeight: 700, lineHeight: 1, marginTop: 10 }}>
+                {score}
+            </span>
+            <span style={{ color: DIM, fontSize: 13, marginTop: 2, letterSpacing: 2, textTransform: "uppercase" }}>points</span>
+        </div>
+    );
 
     return new ImageResponse(
         (
             <div
                 style={{
-                    background: "#0a0a0a",
+                    background: VOID,
                     width: "100%",
                     height: "100%",
                     display: "flex",
                     flexDirection: "column",
-                    padding: "60px",
-                    fontFamily: "sans-serif",
+                    padding: "54px 60px",
+                    fontFamily: "serif",
                 }}
             >
                 {/* Header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px" }}>
-                    <span style={{ color: "white", fontSize: 36, fontWeight: "bold", letterSpacing: "-1px" }}>
-                        ARGOS
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: GOLD, fontSize: 20, fontWeight: 700, letterSpacing: 8, textTransform: "uppercase" }}>
+                        ◆ The Oracle&apos;s Verdict
                     </span>
-                    <span style={{ color: "#666", fontSize: 20, textTransform: "uppercase", letterSpacing: "2px" }}>
-                        {debate.mode} debate
-                    </span>
+                    <span style={{ color: TEXT, fontSize: 26, fontWeight: 700, letterSpacing: 3 }}>ARGOS</span>
                 </div>
 
+                {/* Gold rule */}
+                <div style={{ display: "flex", height: 2, width: "100%", marginTop: 16, background: "linear-gradient(90deg, #c9a84c 0%, rgba(201,168,76,0.25) 70%, rgba(201,168,76,0) 100%)" }} />
+
                 {/* Topic */}
-                <div style={{
-                    color: "white",
-                    fontSize: 42,
-                    fontWeight: "bold",
-                    lineHeight: 1.2,
-                    marginBottom: "50px",
-                    maxWidth: "900px",
-                }}>
+                <div style={{ color: TEXT, fontSize: 40, fontWeight: 700, lineHeight: 1.18, marginTop: 26, maxWidth: 1000, display: "flex" }}>
                     {topicTitle}
                 </div>
 
                 {/* Scores */}
-                <div style={{ display: "flex", gap: "40px", alignItems: "center", marginBottom: "40px" }}>
-                    {/* Player A */}
-                    <div style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        background: scoreA > scoreB ? "#052e16" : "#1a1a1a",
-                        border: `2px solid ${scoreA > scoreB ? "#22c55e" : "#333"}`,
-                        borderRadius: "16px",
-                        padding: "24px 40px",
-                        flex: 1,
-                    }}>
-                        <span style={{ color: "#888", fontSize: 16, marginBottom: "8px" }}>
-                            {playerA?.username ?? "Player A"}
-                        </span>
-                        <span style={{
-                            color: scoreA > scoreB ? "#22c55e" : "white",
-                            fontSize: 64,
-                            fontWeight: "bold",
-                            lineHeight: 1,
-                        }}>
-                            {scoreA}
-                        </span>
-                        <span style={{ color: "#666", fontSize: 14, marginTop: "4px" }}>points</span>
-                    </div>
-
-                    {/* VS */}
-                    <div style={{ color: "#444", fontSize: 32, fontWeight: "bold" }}>VS</div>
-
-                    {/* Player B */}
-                    <div style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        background: scoreB > scoreA ? "#052e16" : "#1a1a1a",
-                        border: `2px solid ${scoreB > scoreA ? "#22c55e" : "#333"}`,
-                        borderRadius: "16px",
-                        padding: "24px 40px",
-                        flex: 1,
-                    }}>
-                        <span style={{ color: "#888", fontSize: 16, marginBottom: "8px" }}>
-                            {playerB?.username ?? "Player B"}
-                        </span>
-                        <span style={{
-                            color: scoreB > scoreA ? "#22c55e" : "white",
-                            fontSize: 64,
-                            fontWeight: "bold",
-                            lineHeight: 1,
-                        }}>
-                            {scoreB}
-                        </span>
-                        <span style={{ color: "#666", fontSize: 14, marginTop: "4px" }}>points</span>
-                    </div>
+                <div style={{ display: "flex", gap: 28, alignItems: "stretch", marginTop: 28 }}>
+                    {playerBlock(playerA?.username ?? "Player A", sideA, scoreA, aWins)}
+                    <div style={{ display: "flex", alignItems: "center", color: DIM, fontSize: 26, fontWeight: 700, letterSpacing: 3 }}>VS</div>
+                    {playerBlock(playerB?.username ?? "Oracle", sideB, scoreB, bWins)}
                 </div>
 
-                {/* Winner banner */}
-                {winnerName && (
-                    <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        background: "#ffffff0a",
-                        border: "1px solid #333",
-                        borderRadius: "12px",
-                        padding: "16px 32px",
-                    }}>
-                        <span style={{ color: "#22c55e", fontSize: 24, fontWeight: "bold" }}>
-                            🏆 {winnerName} won this debate
+                {/* Sharpest fallacy call-out (the shareable sting) */}
+                {sharpest && (
+                    <div style={{ display: "flex", flexDirection: "column", marginTop: 24, padding: "16px 22px", background: "rgba(224,86,76,0.08)", border: "1px solid rgba(224,86,76,0.5)", borderRadius: 12 }}>
+                        <span style={{ color: RED, fontSize: 15, fontWeight: 700, letterSpacing: 3, textTransform: "uppercase" }}>
+                            Sharpest fallacy · {sharpest.name}
                         </span>
+                        {sharpest.quote && (
+                            <span style={{ color: MUTED, fontSize: 22, fontStyle: "italic", marginTop: 6, display: "flex" }}>
+                                “{sharpest.quote}”
+                            </span>
+                        )}
                     </div>
                 )}
 
-                {/* Footer */}
-                <div style={{
-                    position: "absolute",
-                    bottom: "40px",
-                    right: "60px",
-                    color: "#444",
-                    fontSize: 16,
-                }}>
-                    argos-indol.vercel.app
+                {/* Footer: winner + url */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "auto" }}>
+                    <span style={{ color: winnerName ? GOLD_BRIGHT : DIM, fontSize: 26, fontWeight: 700, display: "flex" }}>
+                        {winnerName ? `🏆 ${winnerName} carries the verdict` : "A debate without a victor"}
+                    </span>
+                    <span style={{ color: DIM, fontSize: 16, letterSpacing: 1 }}>argos-indol.vercel.app</span>
                 </div>
             </div>
         ),
-        { width: 1200, height: 630 }
+        SIZE
     );
 }

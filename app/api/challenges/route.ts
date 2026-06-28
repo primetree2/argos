@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { moderateContent } from "@/lib/moderation";
+import { getOrCreateTopic } from "@/lib/topics";
 
 // POST /api/challenges — post an open public challenge with a chosen topic.
 export async function POST(request: Request) {
@@ -25,13 +26,20 @@ export async function POST(request: Request) {
     const isBlitz = blitz === true;
     const resolvedRounds = [2, 3, 4, 5].includes(rounds) ? rounds : 3;
 
-    const { data: topicData, error: topicError } = await supabase
-        .from("topics")
-        .insert({ title: topic.trim(), category: category ?? null, source: "user" })
-        .select()
-        .single();
+    // Reuse an existing topic row for this title (unique constraint from 0004),
+    // mirroring match_player — a blind insert would throw on a repeated title.
+    const { data: topicData, error: topicError } = await getOrCreateTopic(
+        supabase,
+        topic.trim(),
+        { category: category ?? null, source: "user" }
+    );
 
-    if (topicError) return NextResponse.json({ error: topicError.message }, { status: 500 });
+    if (topicError || !topicData) {
+        return NextResponse.json(
+            { error: topicError ?? "Could not create topic." },
+            { status: 500 }
+        );
+    }
 
     // Try inserting WITH the persistent-challenge columns first. If the table
     // predates migration 0018, that insert errors on the unknown columns, so we
@@ -62,7 +70,7 @@ export async function POST(request: Request) {
 
     if (challengeError) return NextResponse.json({ error: challengeError.message }, { status: 500 });
 
-    return NextResponse.json({ challenge, topic: topicData });
+    return NextResponse.json({ challenge, topic: { id: topicData.id, title: topic.trim() } });
 }
 
 // DELETE /api/challenges?id=<challenge_id> — creator withdraws their own challenge.
