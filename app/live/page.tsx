@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
+import { flagEmoji, countryName } from "@/lib/country";
 
 export const metadata = {
     title: "Live Now \u2014 Argos",
@@ -21,8 +22,8 @@ interface LiveRow {
     player_a_side: string;
     turn_started_at: string | null;
     topic: { title: string | null; category: string | null } | null;
-    player_a: { username: string | null } | null;
-    player_b: { username: string | null } | null;
+    player_a: { username: string | null; country: string | null } | null;
+    player_b: { username: string | null; country: string | null } | null;
 }
 
 export default async function LiveNowPage() {
@@ -46,7 +47,7 @@ export default async function LiveNowPage() {
     const { data: rows } = await supabase
         .from("debates")
         .select(
-            "id, status, current_round, total_rounds, blitz, player_a_side, turn_started_at, topic:topics!debates_topic_id_fkey(title, category), player_a:users!debates_player_a_id_fkey(username), player_b:users!debates_player_b_id_fkey(username)"
+            "id, status, current_round, total_rounds, blitz, player_a_side, turn_started_at, topic:topics!debates_topic_id_fkey(title, category), player_a:users!debates_player_a_id_fkey(username, country), player_b:users!debates_player_b_id_fkey(username, country)"
         )
         .eq("status", "active")
         .eq("is_public", true)
@@ -115,13 +116,19 @@ export default async function LiveNowPage() {
                                         {/* Players */}
                                         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                                             <span className={r.player_a_side === "FOR" ? "badge-for" : "badge-against"}>{r.player_a_side}</span>
-                                            <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.85rem", fontWeight: 500, color: "var(--text-secondary)" }}>
+                                            <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.85rem", fontWeight: 500, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                                                {flagEmoji(r.player_a?.country) && (
+                                                    <span title={countryName(r.player_a?.country)} aria-label={countryName(r.player_a?.country)} style={{ fontSize: "0.95rem", lineHeight: 1 }}>{flagEmoji(r.player_a?.country)}</span>
+                                                )}
                                                 {r.player_a?.username ?? "Unknown"}
                                             </span>
                                             <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.75rem", color: "var(--text-tertiary)", letterSpacing: "0.1em", marginLeft: "auto", marginRight: "auto" }}>
                                                 vs
                                             </span>
-                                            <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.85rem", fontWeight: 500, color: "var(--text-secondary)" }}>
+                                            <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.85rem", fontWeight: 500, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                                                {flagEmoji(r.player_b?.country) && (
+                                                    <span title={countryName(r.player_b?.country)} aria-label={countryName(r.player_b?.country)} style={{ fontSize: "0.95rem", lineHeight: 1 }}>{flagEmoji(r.player_b?.country)}</span>
+                                                )}
                                                 {r.player_b?.username ?? "Unknown"}
                                             </span>
                                             <span className={sideB === "FOR" ? "badge-for" : "badge-against"}>{sideB}</span>

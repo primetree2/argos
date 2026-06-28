@@ -7,6 +7,9 @@ export const users = pgTable("users", {
     eloRating: integer("elo_rating").default(1200),
     debatesWon: integer("debates_won").default(0),
     debatesLost: integer("debates_lost").default(0),
+    // Player country (migration 0017): ISO 3166-1 alpha-2, best-effort from the
+    // edge geo header at matchmaking time. Nullable — powers Quick Match flags.
+    country: text("country"),
     // Phase 5 monetization plumbing (migration 0015). Inert during beta
     // (lib/billing/limits.ts BETA_UNLIMITED keeps everyone unlimited).
     isPro: boolean("is_pro").notNull().default(false),

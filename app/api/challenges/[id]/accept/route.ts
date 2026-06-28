@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { backfillIpHash, flagSybilDebate } from "@/lib/safety/fingerprint";
+import { sendMatchNotification } from "@/lib/email/resend";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -76,6 +77,10 @@ export async function POST(
     // Soft Sybil flag: marks the debate for review if both players share an IP
     // hash. No-op otherwise. Never blocks play.
     await flagSybilDebate(supabase, debate.id);
+
+    // One connection email to BOTH players now that the challenge is accepted
+    // and the debate is live (fire-and-forget; no-op without RESEND_API_KEY).
+    sendMatchNotification(debate.id).catch(() => { });
 
     return NextResponse.json({ debateId: debate.id });
 }

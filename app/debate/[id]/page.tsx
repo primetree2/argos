@@ -33,7 +33,13 @@ export default async function DebatePage({
         data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) redirect("/login");
+    // Anonymous spectating: a logged-out viewer may watch a PUBLIC, in-progress
+    // or completed debate read-only. We DON'T redirect them to /login here;
+    // instead they are treated as a spectator (empty viewer id) below. The
+    // authorize guard 404s/redirects them off private or unviewable debates,
+    // and a `waiting` debate (nothing to watch yet, and joining needs auth) is
+    // sent to /login so the join flow can authenticate.
+    const viewerId = user?.id ?? "";
 
     const [{ data: debate, error }, { data: profile }] = await Promise.all([
         supabase
@@ -42,6 +48,8 @@ export default async function DebatePage({
                 `
       *,
       topics (title, category),
+      player_a:users!debates_player_a_id_fkey (username, country),
+      player_b:users!debates_player_b_id_fkey (username, country),
       arguments (
         id, user_id, round_number, content, submitted_at,
         score_total, score_clarity, score_evidence, score_logic,
@@ -53,16 +61,41 @@ export default async function DebatePage({
             .eq("id", id)
             .order("submitted_at", { referencedTable: "arguments", ascending: true })
             .single(),
-        supabase.from("users").select("username").eq("id", user.id).single(),
+        user
+            ? supabase.from("users").select("username").eq("id", user.id).single()
+            : Promise.resolve({ data: null as { username: string | null } | null }),
     ]);
 
-    if (error || !debate) redirect("/dashboard");
+    if (error || !debate) {
+        // Logged-out viewers land on /login (so they can sign in and retry);
+        // authed viewers go back to their dashboard.
+        redirect(user ? "/dashboard" : "/login");
+    }
+
+    // A `waiting` debate has nothing to spectate yet, and the only action on it
+    // (join) requires auth — send a logged-out viewer to sign in.
+    if (!user && debate.status === "waiting") redirect("/login");
 
     // Authorize + redact before handing the debate to the client. A private
     // debate is hidden from non-participants; a live opponent's in-flight
-    // argument is withheld until the viewer has submitted theirs.
-    const safeDebate = authorizeAndSanitizeDebate(debate, user.id);
-    if (!safeDebate) redirect("/dashboard");
+    // argument is withheld from spectators until it is scored.
+    const safeDebate = authorizeAndSanitizeDebate(debate, viewerId);
+    if (!safeDebate) redirect(user ? "/dashboard" : "/login");
 
-    return <DebateRoom debate={safeDebate} currentUserId={user.id} username={profile?.username ?? null} />;
+    // Surface both players' country (best-effort, may be null) so the room can
+    // show a flag next to each side. The embedded relations come back as
+    // single objects via the FK names; normalize to a flat shape for the client.
+    type PlayerRel = { username: string | null; country: string | null } | null;
+    const pa = (safeDebate as unknown as { player_a?: PlayerRel }).player_a ?? null;
+    const pb = (safeDebate as unknown as { player_b?: PlayerRel }).player_b ?? null;
+
+    return (
+        <DebateRoom
+            debate={safeDebate}
+            currentUserId={viewerId}
+            username={profile?.username ?? null}
+            playerACountry={pa?.country ?? null}
+            playerBCountry={pb?.country ?? null}
+        />
+    );
 }

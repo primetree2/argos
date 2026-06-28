@@ -19,7 +19,13 @@ export async function GET(
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Anonymous spectating: a logged-out viewer may read PUBLIC debates
+    // read-only. We pass an empty viewer id to the guard, so they are treated
+    // as a (non-participant) spectator — private debates 404, and the no-peek
+    // redaction still withholds the newest unscored in-flight move. The client
+    // polls this endpoint, so the same guard that runs on the server page must
+    // run here too.
+    const viewerId = user?.id ?? "";
 
     const { data: debate, error } = await supabase
         .from("debates")
@@ -40,10 +46,7 @@ export async function GET(
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!debate) return NextResponse.json({ error: "Debate not found." }, { status: 404 });
 
-    // Same authorization + redaction as the server page: hide private debates
-    // from non-participants and withhold a live opponent's in-flight argument
-    // (the client polls this endpoint, so the guard must live here too).
-    const safeDebate = authorizeAndSanitizeDebate(debate, user.id);
+    const safeDebate = authorizeAndSanitizeDebate(debate, viewerId);
     if (!safeDebate) {
         return NextResponse.json({ error: "Debate not found." }, { status: 404 });
     }

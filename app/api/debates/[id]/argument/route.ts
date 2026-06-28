@@ -158,16 +158,10 @@ export async function POST(
         } catch {
             /* recovered by maintenance cron oracle backstop */
         }
-    } else {
-        // Notify the human player whose turn it now is (no-op if the debate just
-        // entered scoring; sendTurnNotification checks status === 'active').
-        try {
-            const { sendTurnNotification } = await import("@/lib/email/resend");
-            sendTurnNotification(id).catch(() => { });
-        } catch {
-            /* non-critical */
-        }
     }
+    // NOTE: per-turn emails were removed (too noisy). The only gameplay email
+    // is the single connection email sent when players are matched / a
+    // challenge is accepted. The live room + realtime drive every turn.
 
     return NextResponse.json({ argumentId });
 }

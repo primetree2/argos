@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { attemptMatch } from "@/lib/matchmaking";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { backfillIpHash, flagSybilDebate } from "@/lib/safety/fingerprint";
+import { backfillCountry } from "@/lib/safety/country";
+import { sendMatchNotification } from "@/lib/email/resend";
 
 // Rate limit: matchmaking attempts per user. The client polls GET every ~4s,
 // so 30/60s leaves comfortable headroom for legitimate use while throttling
@@ -38,6 +40,9 @@ export async function POST(request: Request) {
 
     // Anti-Sybil: record this user's hashed IP on first sight (no-op if set).
     await backfillIpHash(supabase, user.id, request);
+    // Quick Match country flags: record the player's country on first sight
+    // from the edge geo header (fail-open; no-op if absent or pre-0017).
+    await backfillCountry(supabase, user.id, request);
 
     const { data: profile } = await supabase
         .from("users")
@@ -76,9 +81,13 @@ export async function POST(request: Request) {
     const result = await attemptMatch(user.id, { blitz });
     if (result.matched && result.debateId) {
         await flagSybilDebate(supabase, result.debateId);
+        // One connection email to BOTH players (fire-and-forget; no-op without
+        // RESEND_API_KEY). This is the only gameplay email Argos sends.
+        sendMatchNotification(result.debateId).catch(() => { });
     }
     return NextResponse.json(result);
 }
+
 
 export async function GET(request: Request) {
     const supabase = await createClient();
@@ -112,7 +121,9 @@ export async function GET(request: Request) {
     const result = await attemptMatch(user.id, { blitz });
     if (result.matched && result.debateId) {
         await backfillIpHash(supabase, user.id, request);
+        await backfillCountry(supabase, user.id, request);
         await flagSybilDebate(supabase, result.debateId);
+        sendMatchNotification(result.debateId).catch(() => { });
     }
     const waitedMs = row.joined_at ? Date.now() - new Date(row.joined_at).getTime() : 0;
     return NextResponse.json({ inQueue: true, waitedMs, ...result });

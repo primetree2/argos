@@ -2,10 +2,13 @@ import { Resend } from "resend";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { ORACLE_USER_ID } from "@/lib/ai/oracle";
 
-// Turn email notifications (#3).
-// Self-contained + fail-safe: if RESEND_API_KEY is unset, this no-ops so the
-// debate turn flow is never blocked in dev/preview. All errors are swallowed
-// and logged — a failed email must never break gameplay.
+// Connection email notifications.
+// Self-contained + fail-safe: if RESEND_API_KEY is unset, every send no-ops so
+// gameplay is never blocked in dev/preview. All errors are swallowed and
+// logged — a failed email must never break gameplay. Argos sends exactly ONE
+// gameplay email: a "you're connected for a debate" note to both players when
+// they are matched or a challenge is accepted (sendMatchNotification).
+// Per-turn emails were removed (sendTurnNotification is now an inert no-op).
 
 const FROM = process.env.RESEND_FROM_EMAIL ?? "Argos <notifications@argos-indol.vercel.app>";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://argos-indol.vercel.app";
@@ -17,13 +20,6 @@ function serviceClient() {
     );
 }
 
-function summarize(text: string | null, max = 220): string {
-    if (!text) return "";
-    const trimmed = text.trim().replace(/\s+/g, " ");
-    if (trimmed.length <= max) return trimmed;
-    return trimmed.slice(0, max).trimEnd() + "…";
-}
-
 function escapeHtml(s: string): string {
     return s
         .replace(/&/g, "&amp;")
@@ -33,93 +29,97 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * Email the player whose turn it now is. Looks up everything it needs from the
- * debate id. Safe to call fire-and-forget. Returns true if an email was sent.
+ * Email BOTH human players once when they are connected for a debate — i.e.
+ * matched via Quick Match / the ranked queue, or when a challenge/invite is
+ * accepted. This is the ONLY gameplay email Argos sends now: per-turn emails
+ * were removed because they are unnecessary and noisy (a player who started
+ * matchmaking on their phone and waited on their laptop would otherwise be
+ * pinged for every single turn). One "it's on" email is enough — the live
+ * room + realtime drive the rest.
+ *
+ * Safe to call fire-and-forget. Skips the Oracle system user (vs-AI debates
+ * have no human opponent to notify on the AI side). Returns the number of
+ * emails actually sent (0–2). No-ops entirely if RESEND_API_KEY is unset.
  */
-export async function sendTurnNotification(debateId: string): Promise<boolean> {
+export async function sendMatchNotification(debateId: string): Promise<number> {
     const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) return false; // not configured — silently skip
+    if (!apiKey) return 0; // not configured — silently skip
 
     try {
         const client = serviceClient();
 
         const { data: debate } = await client
             .from("debates")
-            .select("id, status, current_turn, player_a_id, player_b_id, topics (title)")
+            .select("id, status, player_a_id, player_b_id, topics (title)")
             .eq("id", debateId)
             .single();
 
-        // Only notify when it is genuinely someone's turn in a live debate.
-        if (!debate || debate.status !== "active" || !debate.current_turn) return false;
-
-        const activeId = debate.current_turn;
-        // The Oracle never gets emailed — its move is driven by the oracle-turn
-        // route / maintenance cron, not by a notification.
-        if (activeId === ORACLE_USER_ID) return false;
-        const opponentId =
-            debate.player_a_id === activeId ? debate.player_b_id : debate.player_a_id;
-
-        const { data: activeUser } = await client
-            .from("users")
-            .select("email, username")
-            .eq("id", activeId)
-            .single();
-
-        if (!activeUser?.email) return false;
-
-        let opponentName = "your opponent";
-        if (opponentId) {
-            const { data: opp } = await client
-                .from("users")
-                .select("username")
-                .eq("id", opponentId)
-                .single();
-            if (opp?.username) opponentName = opp.username;
-        }
-
-        // The opponent's most recent argument, for a short summary.
-        let lastArg: string | null = null;
-        if (opponentId) {
-            const { data: args } = await client
-                .from("arguments")
-                .select("content")
-                .eq("debate_id", debateId)
-                .eq("user_id", opponentId)
-                .order("submitted_at", { ascending: false })
-                .limit(1);
-            lastArg = args?.[0]?.content ?? null;
-        }
+        if (!debate) return 0;
 
         const topic = (debate.topics as unknown as { title: string } | null)?.title ?? "your debate";
         const link = `${APP_URL}/debate/${debateId}`;
-        const summary = summarize(lastArg);
+        const resend = new Resend(apiKey);
 
-        const html = `
+        // The two seats, excluding the Oracle (never emailed).
+        const seats: string[] = [debate.player_a_id, debate.player_b_id].filter(
+            (idVal): idVal is string => !!idVal && idVal !== ORACLE_USER_ID
+        );
+        if (seats.length === 0) return 0;
+
+        // Look up both players in one query, then map id -> {email, username}.
+        const { data: people } = await client
+            .from("users")
+            .select("id, email, username")
+            .in("id", seats);
+
+        const byId = new Map(
+            (people ?? []).map((p) => [p.id, p as { id: string; email: string | null; username: string | null }])
+        );
+
+        let sent = 0;
+        for (const seatId of seats) {
+            const me = byId.get(seatId);
+            if (!me?.email) continue;
+            const otherId = seats.find((s) => s !== seatId) ?? null;
+            const opponentName =
+                (otherId && byId.get(otherId)?.username) || "your opponent";
+
+            const html = `
 <div style="font-family:Georgia,serif;background:#07080a;color:#f5efe0;padding:32px;border-radius:10px;max-width:520px;margin:0 auto;">
   <p style="font-family:'Courier New',monospace;font-size:11px;letter-spacing:0.28em;color:#c9a84c;text-transform:uppercase;margin:0 0 12px;">◆ Argos</p>
-  <h1 style="font-family:'Times New Roman',serif;font-size:22px;color:#f5efe0;margin:0 0 16px;letter-spacing:0.03em;">It’s your turn</h1>
+  <h1 style="font-family:'Times New Roman',serif;font-size:22px;color:#f5efe0;margin:0 0 16px;letter-spacing:0.03em;">You’re connected for a debate</h1>
   <p style="font-size:15px;line-height:1.6;color:#cfc0a0;margin:0 0 8px;">
-    <strong style="color:#e8c46a;">${escapeHtml(opponentName)}</strong> has made their move in:
+    You’ve been matched against <strong style="color:#e8c46a;">${escapeHtml(opponentName)}</strong> on:
   </p>
   <p style="font-family:'Times New Roman',serif;font-size:17px;color:#f5efe0;margin:0 0 20px;line-height:1.4;">${escapeHtml(topic)}</p>
-  ${summary
-                ? `<blockquote style="border-left:2px solid #00ffe0;background:rgba(0,255,224,0.06);padding:12px 16px;margin:0 0 24px;font-style:italic;font-size:14px;color:#cfc0a0;line-height:1.6;">“${escapeHtml(summary)}”</blockquote>`
-                : ""}
-  <a href="${link}" style="display:inline-block;background:#c9a84c;color:#07080a;font-family:'Times New Roman',serif;font-weight:600;font-size:13px;letter-spacing:0.15em;text-transform:uppercase;text-decoration:none;padding:12px 28px;border-radius:6px;">Make your argument →</a>
-  <p style="font-size:12px;color:#9a8c78;margin:24px 0 0;">The Oracle is waiting. You have 10 minutes once you begin.</p>
+  <a href="${link}" style="display:inline-block;background:#c9a84c;color:#07080a;font-family:'Times New Roman',serif;font-weight:600;font-size:13px;letter-spacing:0.15em;text-transform:uppercase;text-decoration:none;padding:12px 28px;border-radius:6px;">Enter the arena →</a>
+  <p style="font-size:12px;color:#9a8c78;margin:24px 0 0;">The debate plays out live in the room — no more emails after this one.</p>
 </div>`.trim();
 
-        const resend = new Resend(apiKey);
-        await resend.emails.send({
-            from: FROM,
-            to: activeUser.email,
-            subject: `Your turn in: ${topic}`,
-            html,
-        });
+            await resend.emails.send({
+                from: FROM,
+                to: me.email,
+                subject: `You’re matched: ${topic}`,
+                html,
+            });
+            sent += 1;
+        }
 
-        return true;
+        return sent;
     } catch (e) {
-        console.error("sendTurnNotification error:", e);
-        return false;
+        console.error("sendMatchNotification error:", e);
+        return 0;
     }
+}
+
+/**
+ * @deprecated Per-turn emails were removed — they were unnecessary and noisy.
+ * The only gameplay email Argos sends is now the single connection email
+ * (sendMatchNotification), fired once when two players are matched / a
+ * challenge is accepted. This function is retained as an INERT no-op so any
+ * lingering caller compiles and is harmless; it never sends an email.
+ */
+export async function sendTurnNotification(_debateId: string): Promise<boolean> {
+    void _debateId;
+    return false;
 }

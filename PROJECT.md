@@ -582,7 +582,115 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://argos-indol.vercel.app/api/
 > best-effort ~5-min GitHub Actions ping of `/api/cron/maintenance`. Do not add
 > features that assume paid cron, paid Realtime, or any paid service.
 
-**Session:** Phase 3 follow-up — hide blocked users from the public feed (FREE)
+**Session:** Anonymous (logged-out) spectating (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Anyone can now watch a public debate without signing in.** This is the
+  deferred Phase 3 follow-up and amplifies the Live surface + spectator work:
+  a logged-out visitor opening `/debate/[id]` (e.g. from `/live`, the public
+  feed, or a shared link) gets the read-only spectator view.
+  - Server page `app/debate/[id]/page.tsx` no longer hard-redirects logged-out
+    viewers to `/login`. It treats them as a spectator (empty viewer id),
+    applies the same `authorizeAndSanitizeDebate` guard (private → redirect;
+    newest unscored in-flight move still withheld), and only sends a logged-out
+    viewer to `/login` for a `waiting` debate (nothing to watch + join needs
+    auth).
+  - `GET /api/debates/[id]` (which the room polls) likewise allows anonymous
+    reads of public debates instead of 401ing.
+  - DB already permits this: the `0012` RLS SELECT policies are
+    `coalesce(is_public,true) OR participant`, so a null `auth.uid()` still
+    reads public debates + their arguments. NO new migration.
+  - `DebateRoom` handles an empty `currentUserId`: anonymous viewer is always a
+    spectator, gets a stable random presence key (so logged-out watchers aren't
+    collapsed into one count), and the participatory features are disabled —
+    `AudienceVote` gains `canVote` (shows the live crowd split but a “Sign in to
+    vote” hint) and `ArgumentReactions` is passed `canReact={false}`. A “Sign in
+    to debate & vote” CTA appears in the spectator banner. The Navbar already
+    renders the logged-out “ENTER” state.
+  - Runnable as-is, NO migration, NO schema change.
+
+#### Prior checkpoint — Smooth + fast random matching UX (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Random matching now feels instant and smooth even when connections lag.**
+  Pure client-side UX polish in `components/MatchmakingButton.tsx` — NO API or
+  schema change, so it is fully backward compatible.
+  - **Snappier pairing:** the queue poll now runs every **1.5s for the first
+    ~20s**, then backs off to 4s. Most matches happen early, so the tight early
+    cadence makes pairing feel near-instant; the back-off keeps the long tail
+    cheap and well within the 30/60s matchmaking rate limit. (The *matched*
+    player is still found instantly via Realtime; polling is the waiting
+    player's fallback + widening re-attempt.)
+  - **Smooth handoff:** on a match (Realtime OR poll OR the initial POST) the
+    card shows a brief **“Opponent found — entering the arena”** success flash
+    (gold pulse + fill bar) for ~0.9s, then navigates — so the connection reads
+    as intentional, not an abrupt redirect. A single `handledRef` guard makes
+    the handoff fire exactly once even if Realtime and the poll resolve
+    together.
+  - **Active-progress feel:** earlier, gentler staged status text (5s / 30s /
+    90s) plus an animated shimmer bar so the wait looks like progress.
+  - We also no longer fire the “leave queue” unload beacon once a match is
+    found (we’re navigating into it), preventing a self-cancel race.
+
+#### Prior checkpoint — Connection-only emails (remove per-turn notifications) (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Argos now sends exactly ONE gameplay email: a “you’re connected for a
+  debate” note to both players when they are matched / a challenge is
+  accepted.** Per-turn emails were removed — they were unnecessary and noisy
+  (e.g. starting Quick Match on a phone, waiting on a laptop, then getting
+  pinged every single turn). New `sendMatchNotification(debateId)` in
+  `lib/email/resend.ts` emails BOTH human seats once (skips the Oracle, returns
+  0–2, no-op without `RESEND_API_KEY`). Wired into `/api/matchmaking` (POST +
+  GET on match) and `/api/challenges/[id]/accept`. `sendTurnNotification` is now
+  an inert no-op; its call sites were removed from `/api/debates/[id]/argument`
+  and the maintenance-cron forfeit step, and `/api/notify-turn` is a harmless
+  no-op route. NO migration, NO schema. Runnable as-is.
+- ℹ️ Invites/challenges already create the debate via the accept route, so the
+  same single connection email covers “someone challenged/invited you” — no
+  separate email path needed.
+
+#### Prior checkpoint — Quick Match country flags (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Opponents (and Live spectators) see each other's country with a flag.**
+  New nullable `users.country` (ISO 3166-1 alpha-2) is populated best-effort at
+  matchmaking time from the edge geo header (`x-vercel-ip-country`, Cloudflare
+  fallback) — first-sight only, never overwritten, exactly like the anti-Sybil
+  IP-hash backfill (`lib/safety/country.ts` → `backfillCountry`, wired into
+  `/api/matchmaking` POST + GET). `lib/country.ts` is a pure, null-safe code→
+  flag-emoji + name helper. The debate room shows each side's flag in the score
+  tribune (You / Opp.) and the `/live` page shows a flag beside each player.
+  FULLY FAIL-OPEN: no header (local dev) or pre-0017 column → no flag, nothing
+  breaks.
+- ⚠️ **Run `supabase/migrations/0017_user_country.sql`** — `alter table users
+  add column if not exists country text`. Additive + **idempotent (safe to run
+  twice)**. The app is fully runnable BEFORE or AFTER applying it (the country
+  read just returns null → no flag until backfilled).
+
+#### Prior checkpoint — Live spectator watches the COMPLETE debate (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Spectators now watch the full debate live, not just the current round.**
+  The prior redaction hid the ENTIRE in-flight round from spectators, so a
+  viewer (especially a late joiner) only ever saw rounds strictly before the
+  current one. Now a spectator sees every past round AND every already-scored
+  argument in the current round; the ONLY thing withheld on a live debate is
+  the single newest, NOT-YET-SCORED in-flight argument, revealed the instant
+  the Oracle scores it (or the opponent responds and a higher round exists).
+  This keeps the no-peek fairness guarantee while letting the crowd follow the
+  whole match. Spectators still cannot argue (input gated by `isMyTurn`).
+  Changed in lockstep: `lib/debates/visibility.ts` (server guard, used by the
+  debate page + `GET /api/debates/[id]`) and `components/debate/DebateRoom.tsx`
+  `visibleArguments` (client defense-in-depth for Realtime rows). NO migration,
+  NO schema. Runnable as-is.
+
+#### Prior checkpoint — hide blocked users from the public feed (FREE)
 **Date:** 2026-06-27
 
 ### This checkpoint

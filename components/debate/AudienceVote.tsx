@@ -14,11 +14,16 @@ export function AudienceVote({
     round,
     playerALabel,
     playerBLabel,
+    canVote = true,
 }: {
     debateId: string;
     round: number;
     playerALabel: string;
     playerBLabel: string;
+    // When false (anonymous/logged-out viewer), the live tally still shows but
+    // the vote controls are replaced with a sign-in hint — /api/votes requires
+    // auth, so we never let a logged-out viewer fire a request that 401s.
+    canVote?: boolean;
 }) {
     const [tally, setTally] = useState<Tally>({ player_a: 0, player_b: 0 });
     const [mine, setMine] = useState<string | null>(null);
@@ -134,10 +139,19 @@ export function AudienceVote({
                 <span style={{ color: "var(--teal)" }}>{pctB}%</span>
             </div>
 
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-                {chip("player_a", playerALabel, "var(--gold)")}
-                {chip("player_b", playerBLabel, "var(--teal)")}
-            </div>
+            {canVote ? (
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                    {chip("player_a", playerALabel, "var(--gold)")}
+                    {chip("player_b", playerBLabel, "var(--teal)")}
+                </div>
+            ) : (
+                <a
+                    href="/login"
+                    style={{ display: "block", textAlign: "center", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-gold)", textDecoration: "none", border: "1px solid var(--gold-border)", borderRadius: "var(--radius-sm)", padding: "0.5rem" }}
+                >
+                    Sign in to vote
+                </a>
+            )}
         </div>
     );
 }

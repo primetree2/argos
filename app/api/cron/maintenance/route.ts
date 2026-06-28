@@ -133,14 +133,9 @@ async function runAutoForfeit(): Promise<{ forfeited: string[]; error?: string }
             } catch (e) {
                 console.error("Forfeit finalize error:", e);
             }
-        } else {
-            try {
-                const { sendTurnNotification } = await import("@/lib/email/resend");
-                await sendTurnNotification(d.id);
-            } catch (e) {
-                console.error("Forfeit notify error:", e);
-            }
         }
+        // No per-turn email on a forfeit advance — per-turn emails were removed.
+        // The opponent sees the forfeit instantly in the live room via realtime.
 
         processed.push(d.id);
     }

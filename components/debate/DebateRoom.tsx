@@ -11,6 +11,7 @@ import { useTypingPresence, TypingIndicator } from "./TypingPresence";
 import { AudienceVote } from "./AudienceVote";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
+import { flagEmoji, countryName } from "@/lib/country";
 
 interface Argument {
     id: string;
@@ -54,10 +55,16 @@ export function DebateRoom({
     debate: initialDebate,
     currentUserId,
     username = null,
+    playerACountry = null,
+    playerBCountry = null,
 }: {
     debate: Debate;
     currentUserId: string;
     username?: string | null;
+    // ISO 3166-1 alpha-2 country codes for the two seats (best-effort, may be
+    // null). Opponents see each other's flag in Quick Match / any debate.
+    playerACountry?: string | null;
+    playerBCountry?: string | null;
 }) {
     const [debate, setDebate] = useState(initialDebate);
     const [argument, setArgument] = useState("");
@@ -148,15 +155,29 @@ export function DebateRoom({
         };
     }, [debate.status, debate.id]);
 
-    const isPlayerA = debate.player_a_id === currentUserId;
-    const isMyTurn = debate.current_turn === currentUserId;
-    // Spectator: a viewer who is neither player. The input box is already gated
-    // by isMyTurn (always false here), so spectators get a read-only view; this
-    // flag drives the explicit "watching" banner + presence pill.
+    // Anonymous (logged-out) spectator: no user id was provided. They get the
+    // same read-only view as a signed-in spectator, but can't vote/react (those
+    // endpoints require auth), and are counted in presence under a stable
+    // random key so multiple logged-out viewers aren't collapsed into one.
+    const isAnonymous = !currentUserId;
+    const isPlayerA = !isAnonymous && debate.player_a_id === currentUserId;
+    const isMyTurn = !isAnonymous && debate.current_turn === currentUserId;
+    // Spectator: a viewer who is neither player (always true for anonymous).
+    // The input box is already gated by isMyTurn (always false here), so
+    // spectators get a read-only view; this flag drives the explicit "watching"
+    // banner + presence pill.
     const isSpectator =
-        debate.player_a_id !== currentUserId && debate.player_b_id !== currentUserId;
+        isAnonymous ||
+        (debate.player_a_id !== currentUserId && debate.player_b_id !== currentUserId);
     // Stable per-session key for presence so one viewer isn't double-counted.
-    const viewerKey = currentUserId;
+    // Anonymous viewers get a random id generated once (useRef) per mount.
+    const anonKeyRef = useRef<string>(
+        `anon-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+    );
+    const viewerKey = currentUserId || anonKeyRef.current;
+    // Whether the viewer may use the participatory spectator features (vote /
+    // react). Both require an authenticated user.
+    const canInteract = !isAnonymous;
     const mySide = isPlayerA
         ? debate.player_a_side
         : debate.player_a_side === "FOR"
@@ -164,25 +185,44 @@ export function DebateRoom({
             : "FOR";
     const totalPossible = debate.total_rounds * 80;
 
+    // Country flags. "You" = the viewer's seat (Player A for a spectator, since
+    // the columns are labelled You=A / Opp.=B in the spectator banner); "Opp."
+    // is the other seat. A null/invalid country simply renders no flag.
+    const myCountry = isSpectator ? playerACountry : isPlayerA ? playerACountry : playerBCountry;
+    const oppCountry = isSpectator ? playerBCountry : isPlayerA ? playerBCountry : playerACountry;
+    const myFlag = flagEmoji(myCountry);
+    const oppFlag = flagEmoji(oppCountry);
+
     // Visibility (mirrors lib/debates/visibility.ts on the server).
     // Argos debates are STRICTLY SEQUENTIAL: only one player moves at a time and
     // current_turn alternates after every submission. A participant must see the
     // opponent's argument the instant Realtime delivers it — that is the move
     // they read and rebut on their turn. Hiding it is what made the feed look
     // frozen for the player whose turn it was (the bug). So: participants see
-    // everything. Only a SPECTATOR on a live debate is kept out of the newest
-    // in-flight round (the highest round_number present), so the crowd can't
-    // read an argument before the opposing player does. The server already
-    // applies this same redaction for spectators; this is defense in depth for
-    // rows that arrive via Realtime.
+    // everything.
+    //
+    // A SPECTATOR watches the FULL debate as it unfolds — every past round and
+    // every already-scored argument in the current round (so a late joiner can
+    // catch up on the whole match). The ONLY thing withheld is the single
+    // newest, NOT-YET-SCORED in-flight argument, revealed the instant the
+    // Oracle scores it (or the opponent responds and a higher round exists).
+    // The server applies the same redaction; this is defense in depth for rows
+    // that arrive via Realtime.
     const visibleArguments = useMemo(() => {
         if (!isSpectator) return debate.arguments;
-        if (debate.status !== "active") return debate.arguments;
+        if (debate.status !== "active" || debate.arguments.length === 0) return debate.arguments;
         const inFlightRound = debate.arguments.reduce(
             (max, a) => (a.round_number > max ? a.round_number : max),
             0
         );
-        return debate.arguments.filter((a) => a.round_number < inFlightRound);
+        // The latest move in the current round, by submission order.
+        const inRound = debate.arguments.filter((a) => a.round_number === inFlightRound);
+        const inFlight = inRound.length > 0 ? inRound[inRound.length - 1] : null;
+        // Reveal everything once that move is scored; otherwise hide just it.
+        if (!inFlight || inFlight.scoring_status === "done") return debate.arguments;
+        return debate.arguments.filter(
+            (a) => !(a.user_id === inFlight.user_id && a.round_number === inFlight.round_number)
+        );
     }, [debate.arguments, debate.status, isSpectator]);
 
     // Derived values memoized so they aren't recomputed on every realtime event
@@ -457,6 +497,14 @@ export function DebateRoom({
                         <span style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
                             You are watching this debate. “You” = Player A, “Opp.” = Player B.
                         </span>
+                        {isAnonymous && (
+                            <a
+                                href="/login"
+                                style={{ marginLeft: "auto", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-gold)", textDecoration: "none", border: "1px solid var(--gold-border)", borderRadius: "var(--radius-sm)", padding: "0.3rem 0.7rem", whiteSpace: "nowrap" }}
+                            >
+                                Sign in to debate &amp; vote →
+                            </a>
+                        )}
                     </div>
                 </div>
             )}
@@ -470,6 +518,7 @@ export function DebateRoom({
                             round={debate.current_round}
                             playerALabel={`Player A (${debate.player_a_side})`}
                             playerBLabel={`Player B (${debate.player_a_side === "FOR" ? "AGAINST" : "FOR"})`}
+                            canVote={canInteract}
                         />
                     </div>
                 )}
@@ -481,7 +530,10 @@ export function DebateRoom({
                         {/* My score */}
                         <div style={{ textAlign: "left", minWidth: "4rem" }}>
                             <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.5rem", color: "var(--gold)", letterSpacing: "0.06em", lineHeight: 1, textShadow: "0 0 16px rgba(201,168,76,0.35)" }}>{myScore}</p>
-                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.52rem", letterSpacing: "0.2em", color: "var(--text-gold)", opacity: 0.8, textTransform: "uppercase" }}>You</p>
+                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.52rem", letterSpacing: "0.2em", color: "var(--text-gold)", opacity: 0.8, textTransform: "uppercase", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                                {myFlag && <span title={countryName(myCountry)} aria-label={countryName(myCountry)} style={{ fontSize: "0.9rem", lineHeight: 1 }}>{myFlag}</span>}
+                                You
+                            </p>
                         </div>
 
                         {/* Progress bar */}
@@ -495,7 +547,10 @@ export function DebateRoom({
                         {/* Opponent score */}
                         <div style={{ textAlign: "right", minWidth: "4rem" }}>
                             <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.5rem", color: "var(--text-secondary)", letterSpacing: "0.06em", lineHeight: 1 }}>{opponentScore}</p>
-                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.52rem", letterSpacing: "0.2em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>Opp.</p>
+                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.52rem", letterSpacing: "0.2em", color: "var(--text-tertiary)", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "0.3rem", justifyContent: "flex-end" }}>
+                                Opp.
+                                {oppFlag && <span title={countryName(oppCountry)} aria-label={countryName(oppCountry)} style={{ fontSize: "0.9rem", lineHeight: 1 }}>{oppFlag}</span>}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -770,7 +825,7 @@ export function DebateRoom({
                                             argumentId={arg.id}
                                             initialCounts={reactionCounts[arg.id] ?? {}}
                                             initialMine={myReactions[arg.id] ?? null}
-                                            canReact={true}
+                                            canReact={canInteract}
                                         />
                                         {/* Report control — opponent's content only. */}
                                         {!isMine && (
