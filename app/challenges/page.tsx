@@ -39,11 +39,12 @@ export default async function ChallengesPage() {
 
     // Select the persistent-challenge columns; fall back to the minimal set if
     // they don't exist yet (pre-0018), so the page renders either way.
-    let rawChallenges: Array<{
+    type RawChallenge = {
         id: string; creator_id: string; status: string; created_at: string;
         reusable?: boolean; rounds?: number; blitz?: boolean;
         topics: { title: string; category: string | null } | null;
-    }> | null = null;
+    };
+    let rawChallenges: RawChallenge[] | null = null;
     {
         const full = await supabase
             .from("challenges")
@@ -58,9 +59,9 @@ export default async function ChallengesPage() {
                 .eq("status", "open")
                 .order("created_at", { ascending: false })
                 .limit(80);
-            rawChallenges = (min.data as typeof rawChallenges) ?? null;
+            rawChallenges = (min.data as unknown as RawChallenge[]) ?? null;
         } else {
-            rawChallenges = (full.data as typeof rawChallenges) ?? null;
+            rawChallenges = (full.data as unknown as RawChallenge[]) ?? null;
         }
     }
 
