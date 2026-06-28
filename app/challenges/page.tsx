@@ -19,6 +19,10 @@ export interface OpenChallenge {
     creatorElo: number | null;
     isMine: boolean;
     createdAt: string | null;
+    // Persistent-challenge format (migration 0018; null/defaults pre-0018).
+    reusable: boolean;
+    rounds: number;
+    blitz: boolean;
 }
 
 export default async function ChallengesPage() {
@@ -33,12 +37,32 @@ export default async function ChallengesPage() {
         .eq("id", user.id)
         .single();
 
-    const { data: rawChallenges } = await supabase
-        .from("challenges")
-        .select("id, creator_id, status, created_at, topics (title, category)")
-        .eq("status", "open")
-        .order("created_at", { ascending: false })
-        .limit(80);
+    // Select the persistent-challenge columns; fall back to the minimal set if
+    // they don't exist yet (pre-0018), so the page renders either way.
+    let rawChallenges: Array<{
+        id: string; creator_id: string; status: string; created_at: string;
+        reusable?: boolean; rounds?: number; blitz?: boolean;
+        topics: { title: string; category: string | null } | null;
+    }> | null = null;
+    {
+        const full = await supabase
+            .from("challenges")
+            .select("id, creator_id, status, created_at, reusable, rounds, blitz, topics (title, category)")
+            .eq("status", "open")
+            .order("created_at", { ascending: false })
+            .limit(80);
+        if (full.error) {
+            const min = await supabase
+                .from("challenges")
+                .select("id, creator_id, status, created_at, topics (title, category)")
+                .eq("status", "open")
+                .order("created_at", { ascending: false })
+                .limit(80);
+            rawChallenges = (min.data as typeof rawChallenges) ?? null;
+        } else {
+            rawChallenges = (full.data as typeof rawChallenges) ?? null;
+        }
+    }
 
     const challenges: OpenChallenge[] = [];
     if (rawChallenges && rawChallenges.length > 0) {
@@ -71,6 +95,9 @@ export default async function ChallengesPage() {
                 creatorElo: creator?.elo ?? null,
                 isMine: c.creator_id === user.id,
                 createdAt: c.created_at,
+                reusable: c.reusable === true,
+                rounds: typeof c.rounds === "number" ? c.rounds : 3,
+                blitz: c.blitz === true,
             });
         }
     }

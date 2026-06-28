@@ -16,6 +16,9 @@ export function ChallengeLobby({ challenges: initial, currentUserId }: {
 
     const [topic, setTopic] = useState("");
     const [category, setCategory] = useState<string | null>(null);
+    const [reusable, setReusable] = useState(false);
+    const [rounds, setRounds] = useState(3);
+    const [blitz, setBlitz] = useState(false);
     const [posting, setPosting] = useState(false);
     const [postError, setPostError] = useState("");
 
@@ -85,12 +88,15 @@ export function ChallengeLobby({ challenges: initial, currentUserId }: {
             const res = await fetch("/api/challenges", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ topic, category }),
+                body: JSON.stringify({ topic, category, reusable, rounds, blitz }),
             });
             const data = await res.json();
             if (!res.ok) { setPostError(data.error ?? "Something went wrong."); setPosting(false); return; }
             setTopic("");
             setCategory(null);
+            setReusable(false);
+            setRounds(3);
+            setBlitz(false);
             setPosting(false);
             router.refresh();
         } catch {
@@ -206,6 +212,65 @@ export function ChallengeLobby({ challenges: initial, currentUserId }: {
                     })}
                 </div>
 
+                {/* Format row: rounds + speed + reusable */}
+                <div style={{ marginTop: "0.85rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+                    {/* Rounds */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        {[2, 3, 4, 5].map((n) => {
+                            const active = rounds === n;
+                            return (
+                                <button
+                                    key={n}
+                                    onClick={() => setRounds(n)}
+                                    title={`${n} rounds`}
+                                    style={{
+                                        fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem",
+                                        width: "1.8rem", height: "1.8rem", borderRadius: "var(--radius-sm)",
+                                        border: `1px solid ${active ? "var(--gold-border-hover)" : "var(--border-default)"}`,
+                                        background: active ? "var(--gold-glow)" : "var(--bg-surface)",
+                                        color: active ? "var(--text-gold)" : "var(--text-tertiary)",
+                                        cursor: "pointer", transition: "all 150ms ease",
+                                    }}
+                                >
+                                    {n}
+                                </button>
+                            );
+                        })}
+                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.58rem", letterSpacing: "0.12em", color: "var(--text-tertiary)", textTransform: "uppercase", marginLeft: "0.2rem" }}>rounds</span>
+                    </div>
+
+                    {/* Speed */}
+                    <button
+                        onClick={() => setBlitz((v) => !v)}
+                        style={{
+                            fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.08em",
+                            padding: "0.4rem 0.75rem", borderRadius: "var(--radius-sm)",
+                            border: `1px solid ${blitz ? "var(--teal-border)" : "var(--border-default)"}`,
+                            background: blitz ? "var(--teal-glow)" : "var(--bg-surface)",
+                            color: blitz ? "var(--text-teal)" : "var(--text-tertiary)",
+                            cursor: "pointer", transition: "all 150ms ease",
+                        }}
+                    >
+                        {blitz ? "⚡ Blitz" : "Standard"}
+                    </button>
+
+                    {/* Reusable */}
+                    <button
+                        onClick={() => setReusable((v) => !v)}
+                        title="A reusable challenge stays open and reopens after each debate ends"
+                        style={{
+                            fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.08em",
+                            padding: "0.4rem 0.75rem", borderRadius: "var(--radius-sm)",
+                            border: `1px solid ${reusable ? "var(--gold-border-hover)" : "var(--border-default)"}`,
+                            background: reusable ? "var(--gold-glow)" : "var(--bg-surface)",
+                            color: reusable ? "var(--text-gold)" : "var(--text-tertiary)",
+                            cursor: "pointer", transition: "all 150ms ease",
+                        }}
+                    >
+                        {reusable ? "♾ Reusable" : "Single use"}
+                    </button>
+                </div>
+
                 {postError && (
                     <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.72rem", color: "var(--red-neon)", letterSpacing: "0.06em", marginTop: "0.85rem", padding: "0.6rem 0.85rem", background: "var(--red-glow)", border: "1px solid var(--red-border)", borderRadius: "var(--radius-md)" }}>
                         ⚠ {postError}
@@ -278,6 +343,22 @@ export function ChallengeLobby({ challenges: initial, currentUserId }: {
                                             <h2 style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "1rem", fontWeight: 600, letterSpacing: "0.03em", lineHeight: 1.3, color: "var(--text-primary)" }}>
                                                 {c.topicTitle}
                                             </h2>
+                                            {/* Format pills so viewers see the mode/rounds before joining */}
+                                            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginTop: "0.5rem" }}>
+                                                <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--text-tertiary)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-sm)", padding: "0.2rem 0.5rem", textTransform: "uppercase" }}>
+                                                    {c.rounds} rounds
+                                                </span>
+                                                {c.blitz && (
+                                                    <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--text-teal)", border: "1px solid var(--teal-border)", borderRadius: "var(--radius-sm)", padding: "0.2rem 0.5rem", textTransform: "uppercase" }}>
+                                                        ⚡ Blitz
+                                                    </span>
+                                                )}
+                                                {c.reusable && (
+                                                    <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--text-gold)", border: "1px solid var(--gold-border)", borderRadius: "var(--radius-sm)", padding: "0.2rem 0.5rem", textTransform: "uppercase" }}>
+                                                    ♾ Reusable
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
 
                                         {c.isMine ? (

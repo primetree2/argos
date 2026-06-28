@@ -9,7 +9,7 @@ export async function POST(request: Request) {
 
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { topic, category } = await request.json();
+    const { topic, category, reusable, rounds, blitz } = await request.json();
 
     if (!topic || typeof topic !== "string" || topic.trim().length < 3) {
         return NextResponse.json({ error: "Enter a topic to post a challenge." }, { status: 400 });
@@ -17,6 +17,13 @@ export async function POST(request: Request) {
 
     const mod = moderateContent(topic);
     if (!mod.allowed) return NextResponse.json({ error: mod.reason }, { status: 400 });
+
+    // Persistent-challenge options (migration 0018). Coerced + bounded here;
+    // harmless if the columns don't exist yet (Postgres ignores unknown keys?
+    // no — so we only include them when present, see insert below).
+    const isReusable = reusable === true;
+    const isBlitz = blitz === true;
+    const resolvedRounds = [2, 3, 4, 5].includes(rounds) ? rounds : 3;
 
     const { data: topicData, error: topicError } = await supabase
         .from("topics")
@@ -26,11 +33,32 @@ export async function POST(request: Request) {
 
     if (topicError) return NextResponse.json({ error: topicError.message }, { status: 500 });
 
-    const { data: challenge, error: challengeError } = await supabase
+    // Try inserting WITH the persistent-challenge columns first. If the table
+    // predates migration 0018, that insert errors on the unknown columns, so we
+    // transparently fall back to the original minimal insert — keeping the route
+    // fully runnable before OR after 0018 is applied.
+    let challenge;
+    let challengeError;
+    ({ data: challenge, error: challengeError } = await supabase
         .from("challenges")
-        .insert({ creator_id: user.id, topic_id: topicData.id, status: "open" })
+        .insert({
+            creator_id: user.id,
+            topic_id: topicData.id,
+            status: "open",
+            reusable: isReusable,
+            rounds: resolvedRounds,
+            blitz: isBlitz,
+        })
         .select()
-        .single();
+        .single());
+
+    if (challengeError) {
+        ({ data: challenge, error: challengeError } = await supabase
+            .from("challenges")
+            .insert({ creator_id: user.id, topic_id: topicData.id, status: "open" })
+            .select()
+            .single());
+    }
 
     if (challengeError) return NextResponse.json({ error: challengeError.message }, { status: 500 });
 

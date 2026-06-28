@@ -102,6 +102,185 @@ Sentry + Posthog · Vercel + Vercel Cron + GitHub Actions cron.
 
 ---
 
+## 2.3 Strategic realignment (2026-06-28) — the 60-second dopamine loop
+
+> This section supersedes the *sequencing and emphasis* of the phases below where they
+> conflict. The phases (4–8) remain accurate as a catalogue of work and as the PAID
+> ladder; what changed is **what to build next and why**. Nothing built is wasted —
+> the issue was sequencing, not quality.
+
+**The core problem.** Argos has a cold-start + retention problem disguised as a feature
+problem. The winning platforms (chess.com blitz, Omegle) nailed one thing first: an
+**instant, repeatable, low-friction core loop**. Everything else (ratings, profiles,
+tournaments) came *after* the loop was addictive. Argos's current loop is multi-hour and
+high-effort: pick a topic → wait for a human → write a paragraph → wait → wait for AI
+scoring → repeat over 3 rounds. The roadmap below was "the roadmap of a successful app,
+built before the app is successful." This realignment fixes time-to-first-dopamine.
+
+**Confirmed decisions (owner, 2026-06-28):**
+
+1. **De-emphasize, do NOT delete, the low-value built features.** Daily-topic leaderboard
+   (`/daily`), audience voting, argument reactions, debate replay, and anti-Sybil IP
+   fingerprinting are all merged, cost nothing at idle, and mostly only "activate" with
+   traffic. Keep the code; stop investing; reduce UI prominence (demote `/daily` from the
+   nav). Deleting them is pure regression risk for zero upside.
+2. **vs Oracle: keep AND reuse.** Keep the Oracle as a customizable opponent in the
+   "new debate" flow (as today), *and* reuse the same Oracle engine as the backend for a
+   new **instant 1-round Lightning solo mode**. Reframing matters: the judge scores
+   **argumentation quality only — never who is factually correct** (see §1 / `PROJECT.md`
+   §7), so "the AI knows more so it always wins" is false — a sharp human beats the Oracle
+   on clarity/evidence/logic/rebuttal/fallacy-avoidance. The Oracle can also be tuned
+   beatable (novice/adept/master) so new users get early wins (dopamine).
+3. **Persistent / "trending" open challenges.** Evolve `challenges` from single-shot
+   (`open` → `accepted` → dead) into a creator-owned, **reusable** artifact: a posted
+   challenge shows on the homepage like an X/Twitter "trending" panel; when someone joins
+   it locks (others spectate only); after the debate concludes it **reopens**; the creator
+   gets an **in-app notification** on each join; it persists until the creator deletes it.
+   This fixes the "new debate has no dopamine (create → wait on a private link)" gap by
+   turning every created debate into a public, joinable, reusable surface.
+4. **Random matching is always ranked** (normal + blitz), as designed. The **Lightning /
+   solo-Oracle on-ramp is casual** so a brand-new user's first taste is low-stakes and
+   they don't get demoralized losing their first *ranked* human match.
+5. **Free web push / PWA is a NOW / FREE item** (moved out of PAID). The web-push standard
+   is free; only *managed* services (OneSignal, etc.) cost money. This is the
+   highest-leverage missing retention primitive for async turn-based play on mobile.
+
+**Deferred to far-future prospects (explicitly NOT now):** education / institutional
+licensing (a different, B2B company — splits focus pre-PMF) and tournaments with entry
+fees (payments + gambling-adjacent regulation, needs a crowd). They remain in Phase 5 as
+long-term revenue density, not near-term work.
+
+### 2.4 NEXT-UP execution order (this realignment — all FREE)
+
+Do these in order; each is free-tier and reuses existing infrastructure:
+
+1. **1-round Lightning + instant solo-vs-Oracle on-ramp (casual).** ✅ DONE (shipped). A
+   `lightning: true` debate is a single round (`total_rounds: 1`), blitz-paced, casual, vs
+   the Oracle, with ZERO wait: the human submits one argument, the Oracle replies
+   immediately, both are scored by the existing judge, and the debate finalizes to a
+   result. **NO migration** — `submit_argument` (0003) already finalizes `total_rounds=1`
+   (round-count >= 2 after human + Oracle => last-arg AND last-round => `scoring`); the
+   existing oracle-turn trigger, async scoring, and finalize path all handle it. It reuses
+   the vs-Oracle create path verbatim (forcing oracle + 1 round + blitz + casual behind the
+   flag) and counts against the same `oracle_debates_today` cap. Surfaced as a prominent
+   “⚡ Lightning” dashboard card; the roast result page cross-links into it. *The first
+   experience is instant and solo.*
+2. **Persistent open challenges + in-app join notifications.** ✅ DONE (shipped). `challenges`
+   is now a creator-owned, reusable artifact: a challenge can be marked **reusable** so it
+   reopens automatically after its debate concludes (locks on join — others spectate — then
+   a DB trigger flips it back to `open`), and the creator gets an **in-app notification**
+   each time someone joins. Migration **0018** is additive + idempotent
+   (`challenges.reusable/rounds/blitz`, a `notifications` table with own-row RLS, and the
+   `reopen_reusable_challenge` trigger on `debates`). The accept route honours the
+   challenge's stored rounds/blitz format and notifies the creator (fail-open, service-role).
+   A Navbar bell (Realtime, fail-open) shows unread notifications; the post form gained
+   Reusable + Rounds + Speed options, and cards show the format before joining. Fully
+   runnable BEFORE or AFTER 0018 (every new column/read is fail-open). *Cost: 0.*
+   *(Follow-up ✅ DONE: a dashboard Open-Challenges discovery panel — `fetchOpenChallenges`
+   + `OpenChallengesPanel` — surfaces a few recent open challenges with their format pills
+   so a cold user has a one-tap entry instead of a blank topic box (§2.5 force 5). No
+   migration; renders nothing when empty.)*
+3. **Free web push / PWA.** Service worker + web-push (VAPID) for async turn + "someone
+   joined your challenge" + "your turn" nudges. Mobile-first, free, no managed service.
+4. **Daily single-player "spot the fallacy" 30s mini-game.** Reuses the judge; daily-active
+   + viral + shareable; no opponent needed.
+5. **Sharpen the share scorecard** (`/api/og` + recap card) — the only built-in growth loop.
+
+> Then, and only then, return to the depth/retention items already catalogued below. The
+> fastest path to "popular + revenue" is to stop adding depth and start compressing the
+> time-to-first-dopamine.
+
+---
+
+## 2.5 Psychology & positioning (2026-06-28) — build a mirror, not just a game
+
+> This layer sits ON TOP of §2.4. §2.4 says *what* to build next; this says *how to make
+> it habit-forming and shareable, and what the product is really for.* Where §2.4 items
+> and this layer overlap, ship them together — a fast loop with no identity payoff is just
+> a quiz; a fast loop that tells you who you are is a habit.
+
+### The repositioning (the most important idea in this doc)
+
+Argos is **not** "chess.com for debate" — that is the *mechanic*. Argos is **a mirror for
+how people think.** The AI judge that names your fallacies is a *self-knowledge machine*,
+which is psychologically rarer and stickier than a debate game. People don't get addicted
+to chess.com because games are fast; they get addicted because *being rated makes them
+someone.* Steer the entire product toward **"this app tells me how my mind actually
+works"** — something you cannot get from ChatGPT, Reddit, or Omegle. The debate is the
+depth; self-knowledge is the hook.
+
+### Five behavioral forces to engineer (priority order)
+
+1. **Variable-ratio reward on the verdict (the core dopamine engine).** Dopamine spikes on
+   *reward-prediction-error* — the unexpected, not the reward itself (Schultz). The score
+   reveal is a slot machine that isn't tuned yet. Engineer the sequence: submit → a 2–3s
+   "Oracle deliberating" beat → dimensions count up one at a time → fallacy call-outs land
+   LAST with a sting. Make the gap between submit and verdict a held breath. Zero new
+   backend; pure reveal UX. (Why chess.com / Duolingo / Hinge over-invest in resolution
+   animation.)
+2. **Loss aversion via streaks + a rank you can lose.** Losses hurt ~2× as much as
+   equivalent gains feel good (Kahneman); Duolingo's empire is streak-loss panic. Tie Elo
+   (a number that can fall) and the daily mini-game (a streak surface) to identity: a
+   **daily streak** on the fallacy mini-game (from v1, not later), a **"protect your rank"**
+   nudge after ~2 idle days, and a weekly **"your mind this week"** recap (fallacies you
+   commit most, strongest dimension). The recap is also the best ORGANIC share artifact —
+   it's *about them*, far better than a single scorecard.
+3. **Identity & labeling (the retention multiplier most debate apps miss).** After ~5
+   debates, the Oracle assigns a **mind archetype** derived from the user's real score
+   pattern — "The Logician" (high logic, low rebuttal), "The Closer" (high rebuttal), "The
+   Rhetorician" (high clarity, weak evidence), etc. Forer/Barnum effect + self-perception
+   theory: once labeled, people *act to confirm the label* and *broadcast it* (why MBTI,
+   Spotify Wrapped, and "which character are you" quizzes go viral). It's a pure function
+   over data you already store, and it converts a score into a defended, shared identity.
+4. **Social proof + the spectator→player ladder.** Watching is the low-commitment
+   foot-in-the-door (Cialdini commitment/consistency); you built spectating but there's no
+   conversion step. After a logged-out viewer watches ONE debate, drop an instant pre-auth
+   nudge: *"You'd have scored this argument how? Try one round vs the Oracle — no signup."*
+   Let the first taste happen BEFORE the auth wall — the gate is where most consumer funnels
+   die.
+5. **Kill the blank-page tax at the entry screen.** Asking a cold user to invent a topic is
+   the biggest conversion killer (choice paralysis / Hick's Law). The homepage must never
+   show an empty topic box first — it shows **one tap: "Debate this →"** on a hot,
+   pre-loaded topic. Make the trending-challenges panel (§2.4 item 2), not topic-creation,
+   the default front door.
+
+### Two product bets to add (not previously in the roadmap)
+
+- **Solo "roast my take" (async, no opponent, no rounds) — likely the single biggest growth
+  lever.** ✅ DONE (shipped). Paste any hot take (a tweet, a Reddit comment); the Oracle
+  scores it and names the fallacies instantly. `/roast` + `POST /api/roast` reuse the
+  existing neutral judge (`scoreArgument`) VERBATIM and write NOTHING to the DB (no debate,
+  no argument, no topic row, no Elo) — so it cannot affect any existing flow and needs no
+  migration. Auth-gated, fail-open rate-limited (10/60s via `check_rate_limit`, 0008), and
+  passes the same cheap regex gate + Gemini safety pass used on real arguments. The UI
+  implements the §2.5 force-1 tuned verdict reveal (deliberation beat → dimensions count up
+  → fallacies land last) and the §2.5 force-3 mind-archetype payload, then an X share intent.
+  Surfaced via a `ROAST` nav link + a landing-page secondary CTA. *The debate is the depth;
+  the solo roast is the hook.*
+- **Ship §2.4 item 1 WITH the tuned verdict reveal (force 1) and the mind-archetype label
+  (force 3) from day one** — not as later polish. The label and the reveal ARE the
+  retention; the fast loop without them is just a quiz.
+
+### Monetization reframing (carry into Phase 5)
+
+Do NOT anchor on a $6 "play more" sub. People pay for **insight about themselves** and
+**getting better** far more reliably than for unlimited matches. Reframe Argos Pro as
+**"Argos Coach"**: personalized fallacy-pattern analysis, "your weakest dimension + 3 drills
+to fix it," annotated replay improvement tips, and unlimited solo roast. Price **$8–12/mo**.
+This is a Calm / Duolingo-Plus framing (pay to improve yourself), which converts ~3–5×
+better than pay-to-play-more. Education / tournaments stay deferred (§2.3); the scoring
+engine as a metered API is a real Year-2 B2B option once the judge is proven by the
+consumer loop.
+
+### One-line strategy
+
+Argos is **a mirror for how people think**; the debate is just the most engaging way to
+look into it. Make **solo roast + mind-archetype + streak** the front door, engineer the
+five forces above, and position the whole product around self-knowledge — not a game
+competing for the attention of people who already argue for free on X.
+
+---
+
 ## 3. How to read the phases
 
 Each phase has two tracks:
@@ -234,6 +413,13 @@ forward only when money is available.
 4. **Better viral share artifact.** You already generate an OG image (`/api/og`). Add a
    "debate recap" share card that highlights the score reveal + the best fallacy call-out.
    (Animated video clips are a PAID/later item — static first.) *Cost: 0.*
+   *(§2.4 NEXT-UP item 5 — pull forward; the only built-in growth loop.)*
+4b. **Daily single-player "spot the fallacy" mini-game.** 30-second, single-player,
+   shareable, no opponent — reuses the existing judge. Daily-active + viral + spectator→
+   player funnel fuel. *Cost: 0.* *(§2.4 NEXT-UP item 4.)*
+4c. **Free web push / PWA.** Service worker + the free web-push (VAPID) standard for async
+   turn nudges, "someone joined your challenge," and "your turn." Mobile-first retention; no
+   managed service. *Cost: 0.* *(§2.4 NEXT-UP item 3 — moved here from PAID.)*
 5. **Daily Topic global leaderboard.** ✅ DONE. `/daily` ranks everyone who completed a
    debate on today's Daily Topic by total argument score (with debates + wins), cached
    (`lib/cache/dailyLeaderboard.ts`, 120s, tag `daily-leaderboard`, invalidated on any
@@ -247,8 +433,9 @@ forward only when money is available.
 - **Auto-generated highlight video/clips** for TikTok/Reels/X (e.g. Remotion render on a
   worker, or an API like Shotstack). The single best top-of-funnel artifact, but needs
   compute. *Realistic spend: render minutes, ~$10–30/mo at small scale.*
-- **Web push notifications** infra (free via web-push standard; "paid" only if you use a
-  managed service like OneSignal — which has a free tier). Prefer the free web-push first.
+- ~~**Web push notifications**~~ — **moved to FREE** (§2.4 item 3 / Phase 3 FREE item 4c):
+  the web-push (VAPID) standard is free. Only reach for a managed service (OneSignal, etc.)
+  if/when volume forces it; it has a free tier anyway.
 
 ---
 
@@ -259,9 +446,19 @@ forward only when money is available.
 1. **Presence-based matchmaking.** Use **Supabase Realtime presence channels** to track who
    is *online right now*. Pair two live users instantly instead of queue+poll. Combine with
    Blitz mode (Phase 3) for the Omegle experience. *Cost: 0 within free Realtime concurrency.*
+   **Always ranked** (normal + blitz), per the §2.3 realignment.
 2. **Lobby with live online count + "Quick Match" button.** Show how many are online and
    waiting; one click drops you into a blitz debate. *Cost: 0.*
-3. **Load test before launch.** Use a free tool (k6 OSS, Artillery free) to find the
+3. **1-round Lightning + instant solo-vs-Oracle on-ramp (casual).** §2.4 NEXT-UP item 1 —
+   *the highest-priority FREE work in this realignment.* One argument each, AI-scored, done
+   in ~90s; the solo variant has zero wait. Casual (low-stakes first taste) so it doesn't
+   collide with always-ranked random matching. Reuses the existing judge + Oracle. *Cost: 0.*
+4. **Persistent "trending" open challenges + in-app join notifications.** §2.4 NEXT-UP item
+   2 — evolve `challenges` into a creator-owned, reusable artifact surfaced on the homepage
+   (X-style trending panel); locks on join (others spectate), reopens after the debate
+   concludes, notifies the creator in-app on each join, persists until deleted. Additive
+   schema (`reusable` flag + a lightweight `notifications` table). *Cost: 0.*
+5. **Load test before launch.** Use a free tool (k6 OSS, Artillery free) to find the
    breaking point and tune pooling/caching. *Cost: 0.*
 
 ### 💰 PAID (when budget exists)

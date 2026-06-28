@@ -1,7 +1,113 @@
 # PROJECT: Argos — AI Debate Arena
 > Single source of truth for the Argos project.
 > Paste this entire file at the start of ANY new LLM chat to restore full context instantly.
-> Only the section `## 15. Current Status` needs updating after each session.
+> Only the section `## 15. Current Status
+
+**Session:** Open-Challenges dashboard discovery panel (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Dashboard Open-Challenges discovery panel (ROADMAP §2.4 item 2 follow-up / §2.5
+  force 5: kill the blank-page tax).** A cold user now sees a few recent OPEN challenges
+  (topic + format + creator) as a one-tap entry on the dashboard instead of a blank topic
+  box. **NO migration, NO schema change, fail-open.**
+  - `lib/challenges.ts` `fetchOpenChallenges()` — reusable server reader; selects the
+    persistent-challenge columns with a minimal-set fallback (pre-0018 safe), excludes the
+    viewer's own challenges (can't accept your own), resolves creator names/Elo in one
+    batched query, capped small. Returns `[]` on any error.
+  - `components/OpenChallengesPanel.tsx` — server-rendered card list matching the Daily
+    Topic / action-card aesthetic (glass cards, format pills: rounds / ⚡ Blitz / ♾
+    Reusable). Each links to `/challenges` (existing accept flow). Renders NOTHING when
+    there are no open challenges, so it never leaves dead space.
+  - `app/dashboard/page.tsx` fetches it in the existing `Promise.all`; `DashboardClient`
+    renders it between the Daily Topic and the Certamen action grid (matching hover CSS).
+  - **Runnable as-is.**
+
+#### Prior checkpoint
+**Session:** Persistent challenges + in-app notifications (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Persistent (reusable) challenges + in-app join notifications (ROADMAP §2.4 item 2).**
+  `challenges` evolves from single-shot (open → accepted → dead) into a creator-owned,
+  reusable artifact, plus a lightweight in-app notification system.
+  - **⚠️ Run `supabase/migrations/0018_persistent_challenges_notifications.sql`** — ADDITIVE
+    + **IDEMPOTENT (safe to run twice)**. Adds `challenges.reusable/rounds/blitz`, a
+    `notifications` table (own-row RLS), and `reopen_reusable_challenge()` — an
+    `after update of status on debates` trigger that flips a reusable challenge back to
+    `open` (clearing `debate_id`) when its debate completes. The app is fully runnable
+    BEFORE or AFTER applying it.
+  - **Reusable lifecycle:** a reusable challenge is claimed (`accepted` + `debate_id`) on
+    join so others can only spectate, then the trigger reopens it the moment the debate
+    completes. Non-reusable challenges keep today's behaviour (stay `accepted`).
+  - **Notifications:** `lib/notifications.ts` `createNotification()` is FAIL-OPEN (no-op if
+    the table is absent). The accept route inserts a `challenge_join` notification to the
+    creator (service-role, never blocks the join). `components/NotificationBell.tsx` (wired
+    into `Navbar`, logged-in only) loads + Realtime-subscribes + marks-read, and resolves
+    its own user id via `auth.getUser()` so NO `<Navbar />` call site changed.
+  - **Create options:** the post form (`ChallengeLobby`) gained Reusable + Rounds + Speed;
+    the accept route builds the debate with the challenge's stored rounds/blitz; cards show
+    the format pills before joining. `/api/challenges` create + `app/challenges/page.tsx`
+    read both fall back to the minimal column set pre-0018.
+  - **Runnable as-is** before or after 0018 (all new reads/writes fail-open).
+
+#### Prior checkpoint
+**Session:** Lightning on-ramp — 1-round instant solo-vs-Oracle (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **⚡ Lightning — the sub-60s on-ramp (ROADMAP §2.4 item 1).** One tap starts a single
+  round (`total_rounds: 1`), blitz-paced, casual debate vs the Oracle with ZERO wait. The
+  human submits one argument, the Oracle replies immediately, both are scored by the
+  existing judge, and the debate finalizes to a normal result/scorecard.
+  - **NO migration, NO schema change.** `submit_argument` (0003) already finalizes a
+    1-round debate correctly: `v_is_last_arg := round_count >= 2`, so after the human (1) +
+    Oracle (2) the single round is both last-arg and last-round and `status` flips to
+    `scoring`. The existing oracle-turn trigger, async scoring queue, and finalize path all
+    already handle `total_rounds=1` — verified against the SQL.
+  - `app/api/debates/route.ts` accepts `lightning: true` and forces the shape (oracle +
+    1 round + blitz + casual), reusing the rest of the vs-Oracle create path verbatim
+    (ACTIVE start, `oracle_debates_today` cap, oracle-turn trigger). `1` is intentionally
+    NOT in `ALLOWED_ROUNDS`, so a single-round debate can ONLY be created via this flag
+    (server-enforced).
+  - `components/DashboardClient.tsx` adds a prominent “⚡ Lightning” action card (seeds the
+    topic from the Daily Topic when present). The roast result page
+    (`components/roast/RoastClient.tsx`) cross-links into Lightning to convert
+    roast → a real round.
+  - **Runnable as-is.** Existing debate room, Realtime, scoring, finalize, and the verdict
+    UI all drive it unchanged. Safe checkpoint.
+
+#### Prior checkpoint
+**Session:** Solo “roast my take” + mind archetype (FREE)
+**Date:** 2026-06-28
+
+### This checkpoint
+- ✅ **Solo “roast my take” — the lowest-friction hook (ROADMAP §2.5).** Paste any take
+  (a tweet, a comment, a hot opinion) and the Oracle scores it instantly and names its
+  fallacies. **NO opponent, NO rounds, NO matchmaking, NO DB writes, NO migration.**
+  - `app/api/roast/route.ts` (`POST { take, stance? }`) reuses the existing neutral judge
+    `scoreArgument()` (`lib/ai/judge.ts`) VERBATIM and returns `{ score, archetype }`. It
+    writes nothing to the database — no debate/argument/topic row, no Elo — so it cannot
+    affect the feed, ratings, or any existing flow. Auth-gated; cheap regex/length gate
+    (`lib/moderation.ts`) + the same `moderateWithOracle` Gemini safety pass used on real
+    arguments; fail-open rate limit `roast:<user>` 10/60s via `check_rate_limit` (0008).
+    FAIL-OPEN throughout: if 0008 is absent the limit check allows; a Gemini error returns
+    a clean 503 the UI handles.
+  - `lib/ai/archetype.ts` — a PURE function (no I/O) mapping a `ScoreResult` to a “mind
+    archetype” title + blurb (§2.5 force 3). Reusable later for profiles/recaps.
+  - `app/roast/page.tsx` (server, auth-gated) + `app/roast/loading.tsx` (`OracleLoader`) +
+    `components/roast/RoastClient.tsx` (client island) implement the §2.5 force-1 tuned
+    verdict reveal: submit → a ~1.8s “Oracle deliberates” held-breath beat → dimensions
+    count up one at a time → fallacy call-outs land LAST → mind-archetype payload → X share
+    intent. Oracle Terminal aesthetic throughout (glass cards, Cinzel/Crimson/Share-Tech,
+    CSS vars, `reveal-*` + `oracle-fade-in`/`oracle-pulse`).
+  - Surfaced via a `ROAST` link in `Navbar` (after DEBATES) and a secondary CTA under the
+    landing hero (“or roast a take — no opponent, instant verdict”).
+  - **Runnable as-is: NO migration, NO schema, NO env change.** This is the first build
+    checkpoint of the §2.4/§2.5 realignment; safe to stop here.
+
+#### Prior status
+` needs updating after each session.
 > Everything above is stable reference — do not edit unless the plan fundamentally changes.
 
 ---

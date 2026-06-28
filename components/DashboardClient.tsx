@@ -7,9 +7,11 @@ import { CircuitBackground } from "@/components/CircuitBackground";
 import { MatchmakingButton } from "@/components/MatchmakingButton";
 import { OnlinePresence } from "@/components/OnlinePresence";
 import { DailyTopicBanner } from "@/components/DailyTopicBanner";
+import { OpenChallengesPanel } from "@/components/OpenChallengesPanel";
 import { getTitle } from "@/lib/achievements";
 import type { DailyTopic } from "@/lib/dailyTopic";
 import type { DebateHistoryEntry } from "@/lib/debates";
+import type { OpenChallengeSummary } from "@/lib/challenges";
 
 const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
@@ -53,15 +55,46 @@ interface DashboardClientProps {
     userId: string;
     dailyTopic: DailyTopic | null;
     history: DebateHistoryEntry[];
+    openChallenges?: OpenChallengeSummary[];
 }
 
-export function DashboardClient({ elo, won, lost, winRate, totalDebates, username, userId, dailyTopic, history }: DashboardClientProps) {
+export function DashboardClient({ elo, won, lost, winRate, totalDebates, username, userId, dailyTopic, history, openChallenges = [] }: DashboardClientProps) {
     const eloDisplay = useCountUp(elo, 1400);
     const wonDisplay = useCountUp(won, 900);
     const lostDisplay = useCountUp(lost, 900);
     const rateDisplay = useCountUp(winRate, 1000);
 
     const rankLabel = getTitle(elo).label;
+
+    // Lightning on-ramp (ROADMAP 2.4 item 1): one tap -> a single-round, blitz,
+    // casual debate vs the Oracle, with zero wait. Reuses the create-debate API.
+    const [lightningLoading, setLightningLoading] = useState(false);
+    const [lightningError, setLightningError] = useState("");
+    const startLightning = async () => {
+        if (lightningLoading) return;
+        setLightningLoading(true);
+        setLightningError("");
+        try {
+            const res = await fetch("/api/debates", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    topic: dailyTopic?.title ?? "Social media does more harm than good",
+                    lightning: true,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setLightningError(data.error ?? "Could not start a Lightning match.");
+                setLightningLoading(false);
+                return;
+            }
+            window.location.href = `/debate/${data.debate.id}`;
+        } catch {
+            setLightningError("The Oracle is unreachable. Try again.");
+            setLightningLoading(false);
+        }
+    };
 
     return (
         <div style={{ minHeight: "100vh", background: "var(--bg-void)", color: "var(--text-primary)" }}>
@@ -130,6 +163,13 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                     </div>
                 )}
 
+                {/* Open Challenges discovery panel (renders nothing when empty) */}
+                {openChallenges.length > 0 && (
+                    <div className="reveal-2" style={{ marginBottom: "2.5rem" }}>
+                        <OpenChallengesPanel challenges={openChallenges} />
+                    </div>
+                )}
+
                 {/* Certamen divider + live online count */}
                 <div className="reveal-3" style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.25rem" }}>
                     <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.60rem", letterSpacing: "0.28em", color: "var(--text-gold)", textTransform: "uppercase", whiteSpace: "nowrap" }}>
@@ -158,6 +198,30 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                     </Link>
 
                     <MatchmakingButton userId={userId} />
+
+                    {/* Lightning — 1-round instant solo-vs-Oracle on-ramp (ROADMAP 2.4 item 1) */}
+                    <button
+                        onClick={startLightning}
+                        disabled={lightningLoading}
+                        style={{ textAlign: "left", background: "transparent", border: "none", padding: 0, cursor: lightningLoading ? "wait" : "pointer", height: "100%" }}
+                    >
+                        <div className="glass-card lightning-card" style={{ padding: "1.75rem 1.5rem", borderTop: "1px solid var(--gold)", height: "100%" }}>
+                            <ActionIcon color="var(--gold)">
+                                <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </ActionIcon>
+                            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.9rem", fontWeight: 600, letterSpacing: "0.06em", color: "var(--text-primary)", marginBottom: "0.4rem" }}>
+                                {lightningLoading ? "Summoning the Oracle…" : "⚡ Lightning"}
+                            </p>
+                            <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.88rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                One round vs the Oracle. No waiting. A verdict in under two minutes.
+                            </p>
+                            {lightningError && (
+                                <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.68rem", color: "var(--red-neon)", letterSpacing: "0.04em", marginTop: "0.6rem" }}>
+                                    {lightningError}
+                                </p>
+                            )}
+                        </div>
+                    </button>
 
                     {/* Browse Challenges — now live (open lobby) */}
                     <Link href="/challenges" style={{ textDecoration: "none" }}>
@@ -282,6 +346,24 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
           animation: none;
           transform: translateY(-2px);
           box-shadow: var(--shadow-card), var(--shadow-gold) !important;
+        }
+        .lightning-card {
+          transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+        }
+        .lightning-card:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-card), var(--shadow-gold);
+        }
+        .open-challenge-row {
+          transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+        }
+        .open-challenge-row:hover {
+          transform: translateX(4px);
+          border-color: var(--gold-border-hover);
+          box-shadow: var(--shadow-card), var(--shadow-gold-sm);
+        }
+        .open-challenge-row:hover .open-challenge-cta {
+          background: var(--gold-glow);
         }
         [data-theme="light"] .new-debate-card {
           animation: none;

@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface NavbarProps {
     /** The currently authenticated user's username, or null if logged out */
@@ -216,6 +217,24 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                         DEBATES
                     </Link>
 
+                    {/* Solo "roast my take" — the low-friction hook (ROADMAP §2.5) */}
+                    <Link
+                        href="/roast"
+                        style={{
+                            fontFamily: "var(--font-cinzel), serif",
+                            fontSize: "0.65rem",
+                            letterSpacing: "0.14em",
+                            color: "var(--text-secondary)",
+                            textDecoration: "none",
+                            padding: "0.45rem 0.5rem",
+                            transition: "color 200ms ease",
+                        }}
+                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
+                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
+                    >
+                        ROAST
+                    </Link>
+
                     {/* Join debate — desktop inline icon-button */}
                     {!hideJoinBar && (
                         <button
@@ -258,6 +277,9 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                             <span>JOIN</span>
                         </button>
                     )}
+
+                    {/* In-app notification bell (logged-in only) */}
+                    {username && !hideAuth && <NotificationBell />}
 
                     {/* Account avatar + dropdown menu */}
                     {username && !hideAuth && (

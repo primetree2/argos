@@ -198,7 +198,7 @@ export default async function HomePage() {
         </div>
 
         {/* CTA */}
-        <div className="reveal-4" style={{ marginBottom: "5rem" }}>
+        <div className="reveal-4" style={{ marginBottom: "5rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
           <Link href="/login" className="btn-oracle btn-oracle-cta">
             Enter the Arena
             <svg
@@ -214,6 +214,23 @@ export default async function HomePage() {
               <line x1="5" y1="12" x2="19" y2="12" />
               <polyline points="12 5 19 12 12 19" />
             </svg>
+          </Link>
+
+          {/* Low-friction secondary hook (ROADMAP §2.5) */}
+          <Link
+            href="/roast"
+            style={{
+              fontFamily: "var(--font-cinzel), serif",
+              fontSize: "0.72rem",
+              letterSpacing: "0.14em",
+              color: "var(--text-secondary)",
+              textDecoration: "none",
+              borderBottom: "1px solid var(--gold-border)",
+              paddingBottom: "0.15rem",
+              transition: "color 200ms ease",
+            }}
+          >
+            or roast a take — no opponent, instant verdict →
           </Link>
         </div>
 

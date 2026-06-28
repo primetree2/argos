@@ -76,7 +76,26 @@ export const challenges = pgTable("challenges", {
     status: text("status").default("open"),
     // Set when accepted so the creator's lobby can redirect to the new debate.
     debateId: uuid("debate_id").references(() => debates.id),
+    // Persistent challenges (migration 0018): a reusable challenge reopens
+    // after its debate completes (DB trigger). rounds/blitz preserve the
+    // creator's chosen format so viewers see it before joining.
+    reusable: boolean("reusable").notNull().default(false),
+    rounds: integer("rounds").notNull().default(3),
+    blitz: boolean("blitz").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow(),
+});
+
+// In-app notifications (migration 0018). A user is told in-app (no email) when
+// someone joins their challenge, etc. RLS: read/update own rows only.
+export const notifications = pgTable("notifications", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    recipientId: uuid("recipient_id").references(() => users.id).notNull(),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    link: text("link"),
+    read: boolean("read").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const matchmakingQueue = pgTable("matchmaking_queue", {

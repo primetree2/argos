@@ -32,9 +32,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { topic, mode, totalRounds, opponentType, blitz } = await request.json();
-    const isOracle = opponentType === "ai";
-    const isBlitz = blitz === true;
+    const { topic, mode, totalRounds, opponentType, blitz, lightning } = await request.json();
+    // Lightning on-ramp (ROADMAP 2.4 item 1): a single-round, blitz-paced,
+    // casual debate vs the Oracle with zero wait. It is just a constrained
+    // shape of the existing vs-Oracle create path — we force the fields here so
+    // the rest of the route (Oracle cap, ACTIVE start, oracle-turn trigger) is
+    // reused verbatim. No new tables/columns.
+    const isLightning = lightning === true;
+    const isOracle = isLightning || opponentType === "ai";
+    const isBlitz = isLightning || blitz === true;
 
     // ── Input validation ──
     if (typeof topic !== "string") {
@@ -58,7 +64,12 @@ export async function POST(request: Request) {
     const resolvedMode = isOracle
         ? "casual"
         : ALLOWED_MODES.includes(mode) ? mode : "casual";
-    const resolvedRounds = ALLOWED_ROUNDS.includes(totalRounds) ? totalRounds : 3;
+    // Lightning is always exactly 1 round. Otherwise honour the requested
+    // rounds from the allowed set (1 is intentionally NOT in ALLOWED_ROUNDS, so
+    // a single-round debate can ONLY be created via the lightning flag).
+    const resolvedRounds = isLightning
+        ? 1
+        : ALLOWED_ROUNDS.includes(totalRounds) ? totalRounds : 3;
 
     // ── Entitlement check (Phase 5 plumbing) ──
     // INERT during beta: getEntitlements().enforced is false while
