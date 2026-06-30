@@ -1,7 +1,60 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import type { ResponseSchema } from "@google/generative-ai";
 import { buildJudgePrompt, buildModerationPrompt } from "./prompts";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+
+// Structured-output schemas (ROADMAP Pillar 1 / R1). Constraining the model to
+// a fixed JSON shape is the second layer of injection defense alongside the
+// delimited, marker-fenced user content in prompts.ts: even if a crafted
+// argument tries to add fields or prose, the response is coerced to this
+// schema, and `normalizeScore` remains the authoritative range/arithmetic
+// guard. responseMimeType + responseSchema are supported by the lite models in
+// use; if a model ever ignores them we still parse + normalize defensively.
+const SCORE_SCHEMA: ResponseSchema = {
+    type: SchemaType.OBJECT,
+    properties: {
+        clarity: { type: SchemaType.INTEGER },
+        evidence: { type: SchemaType.INTEGER },
+        logic: { type: SchemaType.INTEGER },
+        rebuttal: { type: SchemaType.INTEGER },
+        fallacy_penalty: { type: SchemaType.INTEGER },
+        fallacies_found: {
+            type: SchemaType.ARRAY,
+            items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    name: { type: SchemaType.STRING },
+                    quote: { type: SchemaType.STRING },
+                    explanation: { type: SchemaType.STRING },
+                },
+                required: ["name", "quote", "explanation"],
+            },
+        },
+        feedback: { type: SchemaType.STRING },
+        total: { type: SchemaType.INTEGER },
+    },
+    required: [
+        "clarity",
+        "evidence",
+        "logic",
+        "rebuttal",
+        "fallacy_penalty",
+        "fallacies_found",
+        "feedback",
+        "total",
+    ],
+};
+
+const MODERATION_SCHEMA: ResponseSchema = {
+    type: SchemaType.OBJECT,
+    properties: {
+        allowed: { type: SchemaType.BOOLEAN },
+        category: { type: SchemaType.STRING },
+        reason: { type: SchemaType.STRING },
+    },
+    required: ["allowed", "category", "reason"],
+};
 
 // Primary judge model + a fallback used only when the primary is rate-limited
 // or overloaded on the final attempt. The fallback is a different model so a
@@ -30,7 +83,13 @@ export async function scoreArgument(
     const prompt = buildJudgePrompt(topic, side, currentArgument, prevArgument);
 
     const runOnce = async (modelName: string): Promise<ScoreResult> => {
-        const model = genAI.getGenerativeModel({ model: modelName });
+        const model = genAI.getGenerativeModel({
+            model: modelName,
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: SCORE_SCHEMA,
+            },
+        });
         const result = await withTimeout(
             model.generateContent(prompt),
             GEMINI_TIMEOUT_MS
@@ -109,7 +168,13 @@ export interface ModerationVerdict {
 export async function moderateWithOracle(content: string): Promise<ModerationVerdict> {
     const ALLOW: ModerationVerdict = { allowed: true, category: "none", reason: "" };
     try {
-        const model = genAI.getGenerativeModel({ model: PRIMARY_MODEL });
+        const model = genAI.getGenerativeModel({
+            model: PRIMARY_MODEL,
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: MODERATION_SCHEMA,
+            },
+        });
         const result = await withTimeout(
             model.generateContent(buildModerationPrompt(content)),
             15000

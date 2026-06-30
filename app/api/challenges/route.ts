@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-import { moderateContent } from "@/lib/moderation";
+import { moderateTopic, moderateTopicSafety } from "@/lib/moderation";
 import { getOrCreateTopic } from "@/lib/topics";
 
 // POST /api/challenges — post an open public challenge with a chosen topic.
@@ -12,12 +12,17 @@ export async function POST(request: Request) {
 
     const { topic, category, reusable, rounds, blitz } = await request.json();
 
-    if (!topic || typeof topic !== "string" || topic.trim().length < 3) {
+    if (!topic || typeof topic !== "string") {
         return NextResponse.json({ error: "Enter a topic to post a challenge." }, { status: 400 });
     }
 
-    const mod = moderateContent(topic);
+    // Moderate the topic the same way as POST /api/debates (R3): a topic-
+    // appropriate length/profanity gate (NOT the 10-word argument gate, which
+    // wrongly rejected short motions), then the fail-open Gemini safety pass.
+    const mod = moderateTopic(topic);
     if (!mod.allowed) return NextResponse.json({ error: mod.reason }, { status: 400 });
+    const safety = await moderateTopicSafety(topic);
+    if (!safety.allowed) return NextResponse.json({ error: safety.reason }, { status: 400 });
 
     // Persistent-challenge options (migration 0018). Coerced + bounded here;
     // harmless if the columns don't exist yet (Postgres ignores unknown keys?

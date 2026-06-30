@@ -4,6 +4,7 @@ import { ORACLE_USER_ID } from "@/lib/ai/oracle";
 import { getEntitlements, isActionAllowed } from "@/lib/billing/limits";
 import { fetchIsPro, recordUsage, usageToday } from "@/lib/billing/usage";
 import { getOrCreateTopic } from "@/lib/topics";
+import { moderateTopic, moderateTopicSafety } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 
 // Service-role client: used only to count a user's recent debates for rate
@@ -20,8 +21,6 @@ const MAX_DEBATES_PER_DAY = 20;
 // vs-Oracle debates cost 2 Gemini calls each (argue + judge), so they get a
 // tighter daily cap to protect the free Gemini quota (ROADMAP Phase 1, item 2).
 const MAX_ORACLE_DEBATES_PER_DAY = 3;
-const MAX_TOPIC_LEN = 300;
-const MIN_TOPIC_LEN = 8;
 const ALLOWED_ROUNDS = [2, 3, 4, 5];
 const ALLOWED_MODES = ["casual", "ranked"];
 
@@ -43,22 +42,22 @@ export async function POST(request: Request) {
     const isOracle = isLightning || opponentType === "ai";
     const isBlitz = isLightning || blitz === true;
 
-    // ── Input validation ──
+    // ── Input validation + moderation (R3) ──
+    // Topics flow into the judge prompt, the public feed, and OG share cards, so
+    // they are moderated like any other public UGC: a cheap, always-on
+    // length/profanity gate first, then the fail-open Gemini safety pass for the
+    // categories a regex can't catch (hate/harassment/doxxing/spam).
     if (typeof topic !== "string") {
         return NextResponse.json({ error: "Missing topic." }, { status: 400 });
     }
     const trimmedTopic = topic.trim();
-    if (trimmedTopic.length < MIN_TOPIC_LEN) {
-        return NextResponse.json(
-            { error: `Topic is too short (min ${MIN_TOPIC_LEN} characters).` },
-            { status: 400 }
-        );
+    const topicMod = moderateTopic(trimmedTopic);
+    if (!topicMod.allowed) {
+        return NextResponse.json({ error: topicMod.reason }, { status: 400 });
     }
-    if (trimmedTopic.length > MAX_TOPIC_LEN) {
-        return NextResponse.json(
-            { error: `Topic is too long (max ${MAX_TOPIC_LEN} characters).` },
-            { status: 400 }
-        );
+    const topicSafety = await moderateTopicSafety(trimmedTopic);
+    if (!topicSafety.allowed) {
+        return NextResponse.json({ error: topicSafety.reason }, { status: 400 });
     }
     // vs-Oracle debates are always casual (no Elo) — the ranked ladder stays
     // human-only. Human-vs-human debates honour the requested mode.
