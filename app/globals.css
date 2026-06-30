@@ -965,6 +965,24 @@ select:focus-visible,
   background: var(--gold-glow);
 }
 
+/* The in-menu primary-nav group is only needed on mobile, where the inline
+   .nav-links row is hidden. Hidden on desktop to avoid duplicate links. */
+.nav-menu-links {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  /* Collapse the inline nav links; they move into the dropdown so the top bar
+     no longer overflows / scrolls horizontally on phones. */
+  .nav-links {
+    display: none !important;
+  }
+
+  .nav-menu-links {
+    display: block;
+  }
+}
+
 /* ── General padding reduction on small phones ── */
 @media (max-width: 400px) {
   main {

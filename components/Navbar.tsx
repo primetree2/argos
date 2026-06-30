@@ -178,81 +178,85 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                         gap: "0.75rem",
                     }}
                 >
-                    {/* Live debates discovery link */}
-                    <Link
-                        href="/live"
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.4rem",
-                            fontFamily: "var(--font-cinzel), serif",
-                            fontSize: "0.65rem",
-                            letterSpacing: "0.14em",
-                            color: "var(--text-secondary)",
-                            textDecoration: "none",
-                            padding: "0.45rem 0.5rem",
-                            transition: "color 200ms ease",
-                        }}
-                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
-                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
-                    >
-                        <span className="nav-live-dot" aria-hidden="true" />
-                        LIVE
-                    </Link>
+                    {/* Inline nav links — hidden on mobile (collapsed into the
+                        account dropdown) so the bar never overflows the viewport. */}
+                    <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                        {/* Live debates discovery link */}
+                        <Link
+                            href="/live"
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.4rem",
+                                fontFamily: "var(--font-cinzel), serif",
+                                fontSize: "0.65rem",
+                                letterSpacing: "0.14em",
+                                color: "var(--text-secondary)",
+                                textDecoration: "none",
+                                padding: "0.45rem 0.5rem",
+                                transition: "color 200ms ease",
+                            }}
+                            onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
+                            onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
+                        >
+                            <span className="nav-live-dot" aria-hidden="true" />
+                            LIVE
+                        </Link>
 
-                    {/* Public debates feed link */}
-                    <Link
-                        href="/debates"
-                        style={{
-                            fontFamily: "var(--font-cinzel), serif",
-                            fontSize: "0.65rem",
-                            letterSpacing: "0.14em",
-                            color: "var(--text-secondary)",
-                            textDecoration: "none",
-                            padding: "0.45rem 0.5rem",
-                            transition: "color 200ms ease",
-                        }}
-                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
-                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
-                    >
-                        DEBATES
-                    </Link>
+                        {/* Public debates feed link */}
+                        <Link
+                            href="/debates"
+                            style={{
+                                fontFamily: "var(--font-cinzel), serif",
+                                fontSize: "0.65rem",
+                                letterSpacing: "0.14em",
+                                color: "var(--text-secondary)",
+                                textDecoration: "none",
+                                padding: "0.45rem 0.5rem",
+                                transition: "color 200ms ease",
+                            }}
+                            onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
+                            onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
+                        >
+                            DEBATES
+                        </Link>
 
-                    {/* Solo "roast my take" — the low-friction hook (ROADMAP §2.5) */}
-                    <Link
-                        href="/roast"
-                        style={{
-                            fontFamily: "var(--font-cinzel), serif",
-                            fontSize: "0.65rem",
-                            letterSpacing: "0.14em",
-                            color: "var(--text-secondary)",
-                            textDecoration: "none",
-                            padding: "0.45rem 0.5rem",
-                            transition: "color 200ms ease",
-                        }}
-                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
-                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
-                    >
-                        ROAST
-                    </Link>
+                        {/* Solo "roast my take" — the low-friction hook (ROADMAP §2.5) */}
+                        <Link
+                            href="/roast"
+                            style={{
+                                fontFamily: "var(--font-cinzel), serif",
+                                fontSize: "0.65rem",
+                                letterSpacing: "0.14em",
+                                color: "var(--text-secondary)",
+                                textDecoration: "none",
+                                padding: "0.45rem 0.5rem",
+                                transition: "color 200ms ease",
+                            }}
+                            onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
+                            onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
+                        >
+                            ROAST
+                        </Link>
 
-                    {/* Daily "spot the fallacy" mini-game (ROADMAP §2.4 item 4) */}
-                    <Link
-                        href="/fallacy"
-                        style={{
-                            fontFamily: "var(--font-cinzel), serif",
-                            fontSize: "0.65rem",
-                            letterSpacing: "0.14em",
-                            color: "var(--text-secondary)",
-                            textDecoration: "none",
-                            padding: "0.45rem 0.5rem",
-                            transition: "color 200ms ease",
-                        }}
-                        onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
-                        onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
-                    >
-                        FALLACY
-                    </Link>
+                        {/* Daily "spot the fallacy" mini-game (ROADMAP §2.4 item 4) */}
+                        <Link
+                            href="/fallacy"
+                            style={{
+                                fontFamily: "var(--font-cinzel), serif",
+                                fontSize: "0.65rem",
+                                letterSpacing: "0.14em",
+                                color: "var(--text-secondary)",
+                                textDecoration: "none",
+                                padding: "0.45rem 0.5rem",
+                                transition: "color 200ms ease",
+                            }}
+                            onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-gold)")}
+                            onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)")}
+                        >
+                            FALLACY
+                        </Link>
+                    </div>
 
                     {/* Join debate — desktop inline icon-button */}
                     {!hideJoinBar && (
@@ -323,6 +327,24 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                                         {username}
                                     </span>
                                     <hr className="nav-menu-divider" />
+                                    {/* Primary nav — shown in-menu so mobile (where
+                                        the inline links are hidden) can still reach
+                                        them. */}
+                                    <div className="nav-menu-links">
+                                        <Link href="/live" role="menuitem" className="nav-menu-item" onClick={() => setMenuOpen(false)}>
+                                            Live
+                                        </Link>
+                                        <Link href="/debates" role="menuitem" className="nav-menu-item" onClick={() => setMenuOpen(false)}>
+                                            Debates
+                                        </Link>
+                                        <Link href="/roast" role="menuitem" className="nav-menu-item" onClick={() => setMenuOpen(false)}>
+                                            Roast
+                                        </Link>
+                                        <Link href="/fallacy" role="menuitem" className="nav-menu-item" onClick={() => setMenuOpen(false)}>
+                                            Fallacy
+                                        </Link>
+                                        <hr className="nav-menu-divider" />
+                                    </div>
                                     <Link
                                         href={`/profile/${encodeURIComponent(username)}`}
                                         role="menuitem"
@@ -330,6 +352,22 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                                         onClick={() => setMenuOpen(false)}
                                     >
                                         Profile
+                                    </Link>
+                                    <Link
+                                        href="/chronicle"
+                                        role="menuitem"
+                                        className="nav-menu-item"
+                                        onClick={() => setMenuOpen(false)}
+                                    >
+                                        Chronicle
+                                    </Link>
+                                    <Link
+                                        href="/account"
+                                        role="menuitem"
+                                        className="nav-menu-item"
+                                        onClick={() => setMenuOpen(false)}
+                                    >
+                                        Account
                                     </Link>
                                     <form action="/auth/signout" method="post">
                                         <button

@@ -284,6 +284,14 @@ door, engineer the five forces above, and position the whole product around self
 - **Web push / PWA plumbing** — fail-open (0019); needs only VAPID env + icons to activate
   (see `PUSH_SETUP.md`).
 - **Billing plumbing** — `is_pro` + `daily_usage` (0015), `BETA_UNLIMITED=true` (inert).
+- **Account deletion (anonymizing)** — `/account` + `DELETE /api/account` +
+  `delete_user_account()` (0020). Typed `DELETE` confirmation; erases personal data,
+  reassigns participated debates to a “Departed Orator” tombstone so opponents keep their
+  record. (Pillar 1 — trust/privacy.)
+- **Dedicated `/chronicle` history page** — moved off the dashboard (dashboard now shows a
+  compact entry card or the first-debate empty state).
+- **Mobile-safe navbar** — inline nav links collapse into the account dropdown below 720px
+  (no more horizontal overflow); shared animated `LiquidWinRate` now on the profile too.
 
 ### 6.2 🔜 NEXT (do now, in order — all FREE) → see §7 for the why & sequencing
 1. **[Pillar 1] Scoring-integrity hardening (R1).** Isolate user content in the judge

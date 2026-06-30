@@ -8,24 +8,10 @@ import { MatchmakingButton } from "@/components/MatchmakingButton";
 import { OnlinePresence } from "@/components/OnlinePresence";
 import { DailyTopicBanner } from "@/components/DailyTopicBanner";
 import { OpenChallengesPanel } from "@/components/OpenChallengesPanel";
+import { LiquidWinRate } from "@/components/LiquidWinRate";
 import { getTitle } from "@/lib/achievements";
 import type { DailyTopic } from "@/lib/dailyTopic";
-import type { DebateHistoryEntry } from "@/lib/debates";
 import type { OpenChallengeSummary } from "@/lib/challenges";
-
-const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-});
-
-const RESULT_STYLES: Record<DebateHistoryEntry["result"], { label: string; color: string }> = {
-    won: { label: "Won", color: "var(--gold)" },
-    lost: { label: "Lost", color: "var(--text-tertiary)" },
-    draw: { label: "Draw", color: "var(--text-secondary)" },
-    active: { label: "Active", color: "var(--teal)" },
-};
 
 /* ── Count-up hook ── */
 function useCountUp(target: number, duration = 1200) {
@@ -54,15 +40,14 @@ interface DashboardClientProps {
     username: string;
     userId: string;
     dailyTopic: DailyTopic | null;
-    history: DebateHistoryEntry[];
+    hasHistory: boolean;
     openChallenges?: OpenChallengeSummary[];
 }
 
-export function DashboardClient({ elo, won, lost, winRate, totalDebates, username, userId, dailyTopic, history, openChallenges = [] }: DashboardClientProps) {
+export function DashboardClient({ elo, won, lost, winRate, totalDebates, username, userId, dailyTopic, hasHistory, openChallenges = [] }: DashboardClientProps) {
     const eloDisplay = useCountUp(elo, 1400);
     const wonDisplay = useCountUp(won, 900);
     const lostDisplay = useCountUp(lost, 900);
-    const rateDisplay = useCountUp(winRate, 1000);
 
     const rankLabel = getTitle(elo).label;
 
@@ -136,7 +121,7 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                     {/* Lost */}
                     <StatPanel label="Lost" value={lostDisplay} accent="var(--text-tertiary)" />
                     {/* Win Rate — liquid fill, always teal */}
-                    <LiquidWinRate rate={winRate} animated={rateDisplay} />
+                    <LiquidWinRate rate={winRate} />
                 </div>
 
                 {/* Win/loss bar */}
@@ -288,8 +273,10 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                     <div className="gold-rule-subtle" style={{ flex: 1 }} />
                 </div>
 
-                {/* Debate history */}
-                {history.length === 0 ? (
+                {/* Debate history now lives on its own page (/chronicle) so the
+                    dashboard stays focused. New users still get the first-debate
+                    nudge; returning users get a one-tap entry to their history. */}
+                {!hasHistory ? (
                     <div
                         className="reveal-6 glass-card"
                         style={{
@@ -324,28 +311,26 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                         </Link>
                     </div>
                 ) : (
-                    <div className="reveal-6" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {history.map((h) => (
-                            <Link key={h.id} href={`/debate/${h.id}`} style={{ textDecoration: "none" }}>
-                                <div className="history-row" style={{ display: "flex", alignItems: "center", gap: "0.85rem", padding: "0.8rem 1.1rem", background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)" }}>
-                                    <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.55rem", fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", padding: "0.2rem 0.55rem", borderRadius: "2px", flexShrink: 0, color: RESULT_STYLES[h.result].color, border: `1px solid ${RESULT_STYLES[h.result].color}`, opacity: 0.9 }}>
-                                        {RESULT_STYLES[h.result].label}
-                                    </span>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                            {h.topic}
-                                        </p>
-                                        <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.68rem", color: "var(--text-tertiary)", letterSpacing: "0.06em" }}>
-                                            vs {h.opponent ?? "—"}
-                                        </p>
-                                    </div>
-                                    <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.68rem", color: "var(--text-tertiary)", letterSpacing: "0.06em", flexShrink: 0 }}>
-                                        {h.createdAt ? DATE_FMT.format(new Date(h.createdAt)) : ""}
-                                    </span>
-                                </div>
-                            </Link>
-                        ))}
-                    </div>
+                    <Link href="/chronicle" style={{ textDecoration: "none" }} className="reveal-6">
+                        <div className="chronicle-entry glass-card" style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "1.25rem 1.4rem", borderTop: "1px solid var(--gold)" }}>
+                            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0, filter: "drop-shadow(0 0 6px rgba(201,168,76,0.25))" }}>
+                                <polygon points="14,2 26,24 2,24" fill="none" stroke="var(--gold)" strokeWidth="1.25" strokeLinejoin="round" />
+                                <polygon points="14,8 21,21 7,21" fill="var(--gold-glow)" stroke="var(--gold-dim)" strokeWidth="0.75" strokeLinejoin="round" />
+                                <circle cx="14" cy="15" r="1.5" fill="var(--gold)" />
+                            </svg>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.9rem", fontWeight: 600, letterSpacing: "0.06em", color: "var(--text-primary)", marginBottom: "0.25rem" }}>
+                                    View your Chronicle
+                                </p>
+                                <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.88rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                    Every trial you have faced — {won}W · {lost}L across {totalDebates} debate{totalDebates !== 1 ? "s" : ""}.
+                                </p>
+                            </div>
+                            <span className="chronicle-entry-arrow" style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.7rem", letterSpacing: "0.14em", color: "var(--text-gold)", flexShrink: 0, textTransform: "uppercase" }}>
+                                Open →
+                            </span>
+                        </div>
+                    </Link>
                 )}
             </main>
 
@@ -385,13 +370,15 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
           animation: none;
           box-shadow: var(--shadow-card), 0 0 18px rgba(122,82,16,0.18);
         }
-        .history-row {
-          transition: border-color 200ms ease, background 200ms ease, transform 200ms ease;
+        .chronicle-entry {
+          transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
         }
-        .history-row:hover {
-          border-color: var(--gold-border-hover);
-          background: var(--gold-glow);
-          transform: translateX(4px);
+        .chronicle-entry:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-card), var(--shadow-gold-sm);
+        }
+        .chronicle-entry:hover .chronicle-entry-arrow {
+          color: var(--gold-bright);
         }
         .daily-topic-card {
           transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
@@ -404,27 +391,6 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
           background: var(--gold-bright);
         }
       `}</style>
-        </div>
-    );
-}
-
-/* ── Liquid Win Rate panel ── */
-function LiquidWinRate({ rate, animated }: { rate: number; animated: number }) {
-    return (
-        <div className="scanlines" style={{ background: "var(--bg-surface)", padding: "1.25rem 1rem", textAlign: "center", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100px" }}>
-            {/* Teal top accent */}
-            <div style={{ position: "absolute", top: 0, left: "20%", right: "20%", height: "1px", background: "var(--teal)", opacity: 0.95, zIndex: 3 }} />
-            {/* Rising liquid fill */}
-            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: `${animated}%`, background: "linear-gradient(180deg, rgba(0,255,224,0.38) 0%, rgba(0,255,224,0.18) 100%)", transition: "height 1.4s cubic-bezier(0.16,1,0.3,1)", zIndex: 1 }}>
-                {/* Wave */}
-                <div style={{ position: "absolute", top: "-7px", left: "-10%", width: "120%", height: "14px", background: "rgba(0,255,224,0.5)", borderRadius: "50%", animation: "wave-rock 3s ease-in-out infinite" }} />
-            </div>
-            {/* Text — above liquid */}
-            <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.55rem", letterSpacing: "0.22em", color: animated > 60 ? "rgba(0,0,0,0.7)" : "var(--text-tertiary)", textTransform: "uppercase", marginBottom: "0.5rem", position: "relative", zIndex: 2, transition: "color 0.4s ease" }}>Win Rate</p>
-            <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.6rem", letterSpacing: "0.06em", lineHeight: 1, position: "relative", zIndex: 2, transition: "color 0.4s ease, text-shadow 0.4s ease", color: animated > 60 ? "var(--bg-void)" : "var(--teal)", textShadow: animated > 60 ? "0 1px 4px rgba(0,255,224,0.3)" : "0 0 12px rgba(0,255,224,0.5)" }}>
-                {animated}%
-            </p>
-            <style>{`@keyframes wave-rock{0%,100%{transform:translateX(0) scaleX(1)}50%{transform:translateX(4%) scaleX(1.04)}}`}</style>
         </div>
     );
 }

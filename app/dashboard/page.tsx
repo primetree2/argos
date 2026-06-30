@@ -10,13 +10,16 @@ export default async function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/login");
 
+    // History now lives on its own page (/chronicle). The dashboard only needs
+    // to know whether ANY debate exists, to choose between the first-debate
+    // empty state and the "view your chronicle" entry — so we fetch a single row.
     const [{ data: profile }, history, dailyTopic, openChallenges] = await Promise.all([
         supabase
             .from("users")
             .select("elo_rating, debates_won, debates_lost, username")
             .eq("id", user.id)
             .single(),
-        fetchDebateHistory(supabase, user.id, 10),
+        fetchDebateHistory(supabase, user.id, 1),
         getTodayTopic(supabase),
         fetchOpenChallenges(supabase, user.id, 4),
     ]);
@@ -38,7 +41,7 @@ export default async function DashboardPage() {
             username={username}
             userId={user.id}
             dailyTopic={dailyTopic}
-            history={history}
+            hasHistory={history.length > 0}
             openChallenges={openChallenges}
         />
     );

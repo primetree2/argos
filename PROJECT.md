@@ -14,6 +14,47 @@
 >
 > Only the section `## 15. Current Status
 
+**Session:** UI polish (mobile nav, /challenges, profile) + anonymizing account deletion (FREE)
+**Date:** 2026-06-30
+
+### This checkpoint
+- ✅ **Five requested UX changes shipped as one runnable checkpoint (!9, merged).**
+  All FREE, Oracle-Terminal-consistent (CircuitBackground + Navbar +
+  `OracleLoader` loading states, CSS vars only).
+  1. **Mobile navbar no longer overflows.** The inline `LIVE / DEBATES / ROAST /
+     FALLACY` links are wrapped in a `.nav-links` row that **hides below 720px**
+     and collapse into the account dropdown (which also gained **Chronicle**,
+     **Account**, and the links; `.nav-menu-links` is desktop-hidden to avoid
+     duplication). Only JOIN (link icon) + bell + profile avatar stay in the bar
+     on mobile, killing the horizontal scroll.
+  2. **`/challenges` matches `/debate/new`.** Round number-buttons → an Oracle
+     gold **range slider** (`.oracle-range`, live value + tick labels); Speed and
+     Reuse → two-up **selectable cards** (new `selectCard`/`selectCardLabel`
+     helpers in `ChallengeLobby.tsx`).
+  3. **Account deletion (anonymizing).** New `/account` settings page with a
+     "danger zone" requiring the user to type **`DELETE`**; `DELETE /api/account`
+     verifies the phrase, runs the purge via the service role, deletes the
+     `auth.users` row (admin API), and signs out. **Anonymizing model:** the
+     user's personal data is erased but debates they took part in are KEPT for
+     the opponent — the seat / `current_turn` / `winner_id` are reassigned to a
+     seeded **"Departed Orator"** tombstone user, and only the user's OWN
+     arguments / reactions / votes / Elo history are removed.
+     - **⚠️ Run `supabase/migrations/0020_delete_user_account.sql`** — seeds the
+       tombstone (mirrors the 0006 Oracle seed) + `delete_user_account(uuid)`
+       (`SECURITY DEFINER`, every optional-table touch guarded by
+       `to_regclass`). **IDEMPOTENT — safe to run twice.** APPLIED.
+  4. **Chronicle is its own page.** History moved off the crowded dashboard to
+     **`/chronicle`** (full recent history, capped read). The dashboard shows the
+     first-debate empty state for new users, else a compact "View your Chronicle"
+     entry card; `dashboard/page.tsx` now fetches only a 1-row existence check.
+  5. **Profile win-rate is animated.** The dashboard's count-up + rising teal
+     liquid-fill panel was extracted to a shared client island
+     `components/LiquidWinRate.tsx` and reused on the profile stat grid;
+     `DashboardClient` imports it (local copy removed) so both stay in sync.
+  - **Runnable as-is** before OR after 0020 (the route fails cleanly if the RPC
+    is missing). NO new env vars, NO new dependencies.
+
+#### Prior checkpoint
 **Session:** Mind archetype on the profile (ROADMAP §2.5 force 3) (FREE)
 **Date:** 2026-06-28
 

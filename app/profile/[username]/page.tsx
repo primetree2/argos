@@ -9,6 +9,7 @@ import { Achievements } from "@/components/profile/Achievements";
 import { MindArchetype } from "@/components/profile/MindArchetype";
 import { getTitle } from "@/lib/achievements";
 import { aggregateArchetype } from "@/lib/ai/archetype";
+import { LiquidWinRate } from "@/components/LiquidWinRate";
 
 // Oracle system user (migration 0006) — never offer to block the AI.
 const ORACLE_USER_ID = "00000000-0000-0000-0000-0000000000a1";
@@ -190,7 +191,7 @@ export default async function ProfilePage({
                     </div>
                     <ProfileStat label="Won" value={won} accent="var(--gold)" />
                     <ProfileStat label="Lost" value={lost} accent="var(--text-tertiary)" />
-                    <ProfileStat label="Win Rate" value={`${winRate}%`} accent="var(--teal)" teal />
+                    <LiquidWinRate rate={winRate} />
                 </div>
 
                 {/* Mind archetype — the identity payload (§2.5 force 3) */}

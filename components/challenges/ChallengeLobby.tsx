@@ -7,6 +7,37 @@ import type { OpenChallenge } from "@/app/challenges/page";
 
 const CATEGORIES = ["Politics", "Science", "Philosophy", "Technology", "Culture"];
 
+// Shared look for the Speed / Reuse selectable cards (mirrors /debate/new's
+// mode cards on a compact scale).
+function selectCard(active: boolean, tone: "gold" | "teal"): React.CSSProperties {
+    const accent = tone === "teal" ? "var(--teal)" : "var(--gold)";
+    const border = tone === "teal" ? "var(--teal-border)" : "var(--gold-border-hover)";
+    const glow = tone === "teal" ? "rgba(0,255,224,0.06)" : "var(--gold-glow)";
+    const shadow = tone === "teal" ? "var(--shadow-teal)" : "var(--shadow-gold-sm)";
+    return {
+        background: active ? glow : "var(--bg-surface)",
+        border: `1px solid ${active ? border : "var(--border-default)"}`,
+        borderTop: active ? `2px solid ${accent}` : "2px solid transparent",
+        borderRadius: "var(--radius-lg)",
+        padding: "0.85rem 0.75rem",
+        textAlign: "center",
+        cursor: "pointer",
+        transition: "all 200ms ease",
+        boxShadow: active ? shadow : "none",
+    };
+}
+
+function selectCardLabel(active: boolean, tone: "gold" | "teal"): React.CSSProperties {
+    const accent = tone === "teal" ? "var(--teal)" : "var(--text-gold)";
+    return {
+        fontFamily: "var(--font-cinzel), serif",
+        fontSize: "0.78rem",
+        fontWeight: 600,
+        letterSpacing: "0.06em",
+        color: active ? accent : "var(--text-primary)",
+    };
+}
+
 export function ChallengeLobby({ challenges: initial, currentUserId }: {
     challenges: OpenChallenge[];
     currentUserId: string;
@@ -212,63 +243,86 @@ export function ChallengeLobby({ challenges: initial, currentUserId }: {
                     })}
                 </div>
 
-                {/* Format row: rounds + speed + reusable */}
-                <div style={{ marginTop: "0.85rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
-                    {/* Rounds */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        {[2, 3, 4, 5].map((n) => {
-                            const active = rounds === n;
-                            return (
-                                <button
-                                    key={n}
-                                    onClick={() => setRounds(n)}
-                                    title={`${n} rounds`}
-                                    style={{
-                                        fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem",
-                                        width: "1.8rem", height: "1.8rem", borderRadius: "var(--radius-sm)",
-                                        border: `1px solid ${active ? "var(--gold-border-hover)" : "var(--border-default)"}`,
-                                        background: active ? "var(--gold-glow)" : "var(--bg-surface)",
-                                        color: active ? "var(--text-gold)" : "var(--text-tertiary)",
-                                        cursor: "pointer", transition: "all 150ms ease",
-                                    }}
-                                >
-                                    {n}
-                                </button>
-                            );
-                        })}
-                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.58rem", letterSpacing: "0.12em", color: "var(--text-tertiary)", textTransform: "uppercase", marginLeft: "0.2rem" }}>rounds</span>
+                {/* Aesthetic range slider for rounds (mirrors /debate/new) */}
+                <div style={{ marginTop: "1.25rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.7rem" }}>
+                        <label style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase" }}>
+                            Rounds
+                        </label>
+                        <span style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "1.1rem", color: "var(--gold)", letterSpacing: "0.1em", textShadow: "0 0 10px rgba(201,168,76,0.4)" }}>
+                            {rounds}
+                        </span>
                     </div>
 
-                    {/* Speed */}
-                    <button
-                        onClick={() => setBlitz((v) => !v)}
-                        style={{
-                            fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.08em",
-                            padding: "0.4rem 0.75rem", borderRadius: "var(--radius-sm)",
-                            border: `1px solid ${blitz ? "var(--teal-border)" : "var(--border-default)"}`,
-                            background: blitz ? "var(--teal-glow)" : "var(--bg-surface)",
-                            color: blitz ? "var(--text-teal)" : "var(--text-tertiary)",
-                            cursor: "pointer", transition: "all 150ms ease",
-                        }}
-                    >
-                        {blitz ? "⚡ Blitz" : "Standard"}
-                    </button>
+                    <style>{`
+                        .oracle-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; background: var(--bg-elevated); border-radius: 2px; outline: none; cursor: pointer; }
+                        .oracle-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--gold); border: 2px solid var(--bg-void); box-shadow: 0 0 10px rgba(201,168,76,0.5); cursor: pointer; transition: transform 150ms ease, box-shadow 150ms ease; }
+                        .oracle-range::-webkit-slider-thumb:hover { transform: scale(1.2); box-shadow: 0 0 16px rgba(201,168,76,0.7); }
+                        .oracle-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--gold); border: 2px solid var(--bg-void); box-shadow: 0 0 10px rgba(201,168,76,0.5); cursor: pointer; }
+                    `}</style>
 
-                    {/* Reusable */}
-                    <button
-                        onClick={() => setReusable((v) => !v)}
-                        title="A reusable challenge stays open and reopens after each debate ends"
-                        style={{
-                            fontFamily: "var(--font-share-tech), monospace", fontSize: "0.62rem", letterSpacing: "0.08em",
-                            padding: "0.4rem 0.75rem", borderRadius: "var(--radius-sm)",
-                            border: `1px solid ${reusable ? "var(--gold-border-hover)" : "var(--border-default)"}`,
-                            background: reusable ? "var(--gold-glow)" : "var(--bg-surface)",
-                            color: reusable ? "var(--text-gold)" : "var(--text-tertiary)",
-                            cursor: "pointer", transition: "all 150ms ease",
-                        }}
-                    >
-                        {reusable ? "♾ Reusable" : "Single use"}
-                    </button>
+                    <input
+                        type="range" min={2} max={5} value={rounds}
+                        onChange={(e) => setRounds(Number(e.target.value))}
+                        className="oracle-range"
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.4rem" }}>
+                        {[2, 3, 4, 5].map((n) => (
+                            <span key={n} style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", color: rounds === n ? "var(--gold)" : "var(--text-tertiary)", letterSpacing: "0.06em", transition: "color 150ms ease" }}>
+                                {n}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Speed + Visibility — selectable cards (mirrors /debate/new) */}
+                <div style={{ marginTop: "1.5rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }} className="mode-grid">
+                    {/* Speed */}
+                    <div>
+                        <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "0.7rem" }}>
+                            Speed
+                        </label>
+                        <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+                            {([false, true] as const).map((b) => {
+                                const active = blitz === b;
+                                return (
+                                    <button
+                                        key={String(b)}
+                                        onClick={() => setBlitz(b)}
+                                        style={selectCard(active, b ? "teal" : "gold")}
+                                    >
+                                        <span style={selectCardLabel(active, b ? "teal" : "gold")}>
+                                            {b ? "⚡ Blitz" : "Standard"}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Visibility / reuse */}
+                    <div>
+                        <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", opacity: 0.9, textTransform: "uppercase", marginBottom: "0.7rem" }}>
+                            Reuse
+                        </label>
+                        <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+                            {([false, true] as const).map((r) => {
+                                const active = reusable === r;
+                                return (
+                                    <button
+                                        key={String(r)}
+                                        onClick={() => setReusable(r)}
+                                        title={r ? "Stays open and reopens after each debate ends" : "Removed once accepted"}
+                                        style={selectCard(active, "gold")}
+                                    >
+                                        <span style={selectCardLabel(active, "gold")}>
+                                            {r ? "♾ Reusable" : "Single use"}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
 
                 {postError && (
