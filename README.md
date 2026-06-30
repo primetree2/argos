@@ -303,16 +303,27 @@ Recommended Claude models:
 
 ## Roadmap
 
-- [ ] Leaderboard page
-- [ ] Debate history on dashboard
-- [ ] Public profile pages
-- [ ] Challenge system (challenge a specific user)
-- [ ] Debate vs AI mode
-- [ ] Elo history chart
-- [ ] Email turn notifications (Resend)
-- [ ] Daily Topic with global leaderboard
-- [ ] Spectator mode
-- [ ] Clubs and tournaments
+> The full strategy, build ledger, and FREE-vs-PAID sequencing live in **`ROADMAP.md`**
+> (the single source of truth). Summary below.
+
+**Already shipped:** leaderboard, dashboard history, public profiles, challenge system
+(+ persistent challenges), vs-Oracle AI mode, Elo history, Daily Topic + leaderboard,
+live spectator mode + `/live`, anonymous spectating, audience voting, Blitz mode, debate
+replay, achievements/badges, mind archetype, solo "roast my take", Lightning on-ramp,
+daily "spot the fallacy" mini-game, branded OG share cards, async scoring queue, report/
+block, rate limiting, web push / PWA plumbing.
+
+**Next (FREE — in order), per `ROADMAP.md` §6:**
+1. **Integrity first** — prompt-injection isolation in the judge, topic moderation,
+   fail-safe moderation for new users, a Gemini global budget breaker.
+2. **Growth loops** — anonymous landing-page roast (pre-auth), weekly "your mind this
+   week" recap + share.
+3. **Measurement** — PostHog activation/retention funnel (watch D1/D7 before building more).
+4. **Distribution** — pick one channel; seed shareable identity-based cards for 30 days.
+
+**Later / paid (deferred until revenue):** Vercel Pro (real cron), Supabase Pro, Stripe,
+Argos Coach subscription, Clubs, Education licensing, tournaments, metered scoring API.
+The owner is on **free tiers only** for now (only paid dependency: Gemini).
 
 ---
 

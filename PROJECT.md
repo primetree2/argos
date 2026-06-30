@@ -1,6 +1,17 @@
-# PROJECT: Argos — AI Debate Arena
-> Single source of truth for the Argos project.
-> Paste this entire file at the start of ANY new LLM chat to restore full context instantly.
+# PROJECT: Argos — AI Debate Arena (build history & reference)
+
+> **What this file is.** The build-history + architecture/schema **reference** for Argos.
+> For *where the project goes next and why*, read **`ROADMAP.md` first** — it is the single
+> source of truth for strategy, the build ledger (BUILT / IN PROGRESS / NEXT / LATER), and
+> FREE-vs-PAID sequencing. This file records *how things were built* and the schema.
+>
+> **Reading order for a new agent:** `ROADMAP.md` → this file → `README.md` → `PUSH_SETUP.md`.
+>
+> **Ground truth:** everything described here is **merged to `main` and deployed**, and all
+> migrations **`0002`–`0019` are APPLIED**. Any "awaiting merge / run this migration"
+> wording below is historical — ignore it. Budget: **free tiers only** (the only paid
+> dependency is the owner's Gemini subscription); see `ROADMAP.md` §7 for the PAID ladder.
+>
 > Only the section `## 15. Current Status
 
 **Session:** Mind archetype on the profile (ROADMAP §2.5 force 3) (FREE)
@@ -740,7 +751,12 @@ ARGOS wordmark → DEBATES → LOBBY → RANKS → JOIN button → username → 
 
 ## 11. Feature Status
 
-### Phase 1 — Retention (COMPLETE, in review as MRs !1–!4)
+> **This section is historical build phasing.** For the authoritative, current
+> status of every feature (BUILT / IN PROGRESS / NEXT / LATER, FREE vs PAID), use
+> the **Build Ledger in `ROADMAP.md` §5**. Everything in Phases 1–4 below is
+> **merged + deployed**; the "in review as MRs" notes are historical.
+
+### Phase 1 — Retention (COMPLETE, deployed)
 - [x] **Public debate feed** `/debates` — completed public debates, filters: Recent/Most discussed/By Category
 - [x] **Open challenges lobby** `/challenges` — post a motion, accept one, no invite needed
 - [x] **Turn email notifications** — Resend, fires after every turn advance + forfeit, fail-safe
@@ -798,19 +814,40 @@ All 7 MRs are open and mergeable. They are stacked — merge in this exact order
 
 ## 13. Security Checklist
 
+> **Open items here are the INTEGRITY pillar (Pillar 1) in `ROADMAP.md` §4.1 / §5.2.**
+> They are the highest-priority NEXT work — not optional polish. Risk IDs (R1–R12) map to
+> `ROADMAP.md` §3.2.
+
+**Done / in place:**
 - [x] `.env.local` in `.gitignore`
 - [x] `GEMINI_API_KEY` server-side only
 - [x] `SUPABASE_SERVICE_ROLE_KEY` server-side only
-- [x] RLS enabled on all Supabase tables
-- [x] Sentry installed
-- [x] Posthog installed
-- [x] Moderation filter on argument submission (`lib/moderation.ts`)
-- [x] Score API participant check (403 for non-participants) — added Phase 8
-- [x] Cron routes protected by `CRON_SECRET` + `x-vercel-cron` header
+- [x] RLS enabled on all Supabase tables (+ explicit read RLS, migration 0012)
+- [x] Sentry + PostHog installed
+- [x] Regex/length moderation gate + fail-open Gemini safety pass on arguments
+- [x] Score API participant check (403 for non-participants)
+- [x] Cron + internal routes protected by `CRON_SECRET` + `x-vercel-cron` header
 - [x] Challenge accept: race guard prevents double-accept
 - [x] Matchmaking: two-row atomic claim with rollback
-- [ ] Rate limiting on debate creation (max 10/day free tier)
-- [ ] Gemini 429 handling fully robust (partial — 3 retries in judge.ts)
+- [x] Rate limiting on debate creation (20/day) + matchmaking (30/60s) + score (60/60s)
+- [x] OAuth callback open-redirect closed (`safeNextPath`)
+- [x] Report / block + soft anti-Sybil flagging (migrations 0007/0008)
+
+**OPEN — NEXT (Pillar 1, see `ROADMAP.md` §6):**
+- [ ] **(R1) Prompt-injection isolation in the judge** — user content is concatenated raw
+      into `lib/ai/prompts.ts`; clamp protects range, not injected in-range scores. Isolate
+      content + prefer structured output. **CRITICAL — ranked-integrity.**
+- [ ] **(R3) Topic moderation** — topics are length-validated only, then hit the judge
+      prompt + public feed + OG cards unmoderated.
+- [ ] **(R2) Moderation under failure** — safety pass is fail-open; make it
+      fail-closed/queue-for-review for new/low-Elo users + add a free moderation API layer.
+- [ ] **(R5/R11) Gemini global budget breaker** — a daily global ceiling independent of the
+      internal-secret exemption; treat `CRON_SECRET` as high-value (rotate, long/random).
+- [ ] **(R4) Real anti-Sybil** — provisional rank until N distinct opponents; consider
+      voiding ranked Elo on abandonment/ghost.
+- [ ] **(R9) Monitoring/alerts** for every fail-open path (Gemini error rate, moderation
+      fail-open rate, scoring-queue depth, ghost debates).
+- [ ] **(R10) Tests** for `submit_argument`, `match_player`, finalize, Elo math.
 
 ---
 
@@ -834,8 +871,16 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://argos-indol.vercel.app/api/
 
 ## 15. Current Status
 
+> **STRATEGY MOVED:** the forward plan now lives in **`ROADMAP.md` (v2.0,
+> integrity-first, distribution-led)**. Read it first. The checkpoints below are the
+> **build history** (most recent first) and remain useful as a record of *how* each
+> feature was built. For *what to build next*, use `ROADMAP.md` §5 (Build Ledger) + §6
+> (Execution order). The immediate NEXT work is the **INTEGRITY pillar** (prompt-injection
+> isolation, topic moderation, fail-safe moderation, Gemini budget breaker), then the two
+> growth loops (anonymous landing roast + weekly "mind" recap), then funnel instrumentation.
+>
 > **GROUND TRUTH (read this first):** Everything described anywhere in this file
-> is **MERGED to `main`**, and **all migrations `0002`–`0013` are APPLIED** in
+> is **MERGED to `main`**, and **all migrations `0002`–`0019` are APPLIED** in
 > Supabase. Ignore any older "awaiting merge" / "run this migration" wording
 > below — it is historical. The Gemini model in use is real and working.
 >
