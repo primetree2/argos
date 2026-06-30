@@ -1,0 +1,5 @@
+import { OracleLoader } from "@/components/OracleLoader";
+
+export default function Loading() {
+    return <OracleLoader label="Reading your week…" />;
+}

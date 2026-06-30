@@ -86,6 +86,86 @@ export async function moderateTopicSafety(
     }
 }
 
+// Fail-SAFE argument safety pass (ROADMAP Pillar 1 / R2).
+//
+// The Gemini safety pass (moderateWithOracleStatus) is fail-OPEN by default: a
+// transient AI outage resolves to allowed so legitimate players are never
+// blocked. That is the right trade-off for ESTABLISHED users, but it means that
+// during a Gemini outage — i.e. exactly when the platform is busy — a brand-new
+// throwaway account could flush hate/harassment/doxxing into public stranger
+// UGC unchecked. So for UNTRUSTED users (new / low-Elo) we fail-CLOSED: if the
+// safety pass could not actually classify the content, we reject it. Trusted
+// users keep the fail-open behaviour. The always-on regex/length gate
+// (moderateContent) sits beneath both.
+export async function moderateArgumentSafety(
+    text: string,
+    opts: { trusted: boolean }
+): Promise<{ allowed: boolean; reason?: string }> {
+    let status: { allowed: boolean; reason?: string; errored: boolean };
+    try {
+        const { moderateWithOracleStatus } = await import("@/lib/ai/judge");
+        status = await moderateWithOracleStatus(text.trim());
+    } catch {
+        // The dynamic import / call itself failed: treat as an errored pass.
+        status = { allowed: true, errored: true };
+    }
+
+    if (!status.allowed) {
+        return {
+            allowed: false,
+            reason:
+                status.reason ||
+                "This argument was flagged by safety review. Keep the debate respectful.",
+        };
+    }
+
+    // The safety pass could not actually classify the content. Trusted users
+    // pass (fail-open); untrusted users are rejected (fail-closed).
+    if (status.errored && !opts.trusted) {
+        return {
+            allowed: false,
+            reason:
+                "Safety review is temporarily unavailable. New accounts can't post right now — please try again shortly.",
+        };
+    }
+
+    return { allowed: true };
+}
+
+// A user is "trusted" for fail-open moderation once they have demonstrably
+// real activity on the platform: a non-starting Elo (it only moves via ranked
+// completion) OR enough completed debates. New/low-signal accounts — the cheap
+// Sybil/abuse vector — are untrusted and get fail-closed safety (above).
+//
+// FAIL-OPEN read: any error (missing user row, transient DB issue) resolves to
+// `false` (untrusted) so the SAFER default applies; we never trust on error.
+export const STARTING_ELO = 1200;
+export const TRUSTED_MIN_ELO = STARTING_ELO; // any ranked movement = real play
+export const TRUSTED_MIN_DEBATES = 3;
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export async function isTrustedUser(
+    client: SupabaseClient,
+    userId: string
+): Promise<boolean> {
+    try {
+        const { data, error } = await client
+            .from("users")
+            .select("elo_rating, debates_won, debates_lost")
+            .eq("id", userId)
+            .single();
+        if (error || !data) return false;
+        const elo = typeof data.elo_rating === "number" ? data.elo_rating : STARTING_ELO;
+        const completed =
+            (typeof data.debates_won === "number" ? data.debates_won : 0) +
+            (typeof data.debates_lost === "number" ? data.debates_lost : 0);
+        return elo > TRUSTED_MIN_ELO || completed >= TRUSTED_MIN_DEBATES;
+    } catch {
+        return false;
+    }
+}
+
 export function moderateContent(text: string): {
     allowed: boolean;
     reason?: string;

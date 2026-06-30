@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { moderateContent } from "@/lib/moderation";
+import { moderateContent, moderateArgumentSafety, isTrustedUser } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 
 // POST /api/debates/[id]/argument  { content }
@@ -68,15 +68,17 @@ export async function POST(
     // Moderate BEFORE any write. Two gates, cheapest first:
     //   1. Cheap, always-on regex/length filter (lib/moderation.ts).
     //   2. Gemini safety pass for the categories a regex can't catch
-    //      (targeted harassment, hate, doxxing, spam). Fail-open: a Gemini
-    //      outage never blocks a legitimate user (see moderateWithOracle).
+    //      (targeted harassment, hate, doxxing, spam). FAIL-SAFE (R2): fail-open
+    //      for trusted users, but fail-CLOSED for new/low-Elo accounts when the
+    //      safety pass can't classify (e.g. a Gemini outage), so an outage can't
+    //      flush abuse into public UGC from throwaways.
     const mod = moderateContent(trimmed);
     if (!mod.allowed) {
         return NextResponse.json({ error: mod.reason }, { status: 400 });
     }
 
-    const { moderateWithOracle } = await import("@/lib/ai/judge");
-    const safety = await moderateWithOracle(trimmed);
+    const trusted = await isTrustedUser(serviceClient, user.id);
+    const safety = await moderateArgumentSafety(trimmed, { trusted });
     if (!safety.allowed) {
         return NextResponse.json({ error: safety.reason }, { status: 400 });
     }

@@ -10,6 +10,7 @@ import { DailyTopicBanner } from "@/components/DailyTopicBanner";
 import { OpenChallengesPanel } from "@/components/OpenChallengesPanel";
 import { LiquidWinRate } from "@/components/LiquidWinRate";
 import { getTitle } from "@/lib/achievements";
+import { track, identifyUser } from "@/lib/analytics";
 import type { DailyTopic } from "@/lib/dailyTopic";
 import type { OpenChallengeSummary } from "@/lib/challenges";
 
@@ -48,6 +49,15 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
     const eloDisplay = useCountUp(elo, 1400);
     const wonDisplay = useCountUp(won, 900);
     const lostDisplay = useCountUp(lost, 900);
+
+    // Funnel (ROADMAP §6.2 item 7): identify the user so the curve can be
+    // measured per-person (incl. D1/D7), and record the activation milestone.
+    // Once per mount; safe no-op if PostHog isn't initialized.
+    useEffect(() => {
+        identifyUser(userId, { username });
+        track("signed_in", { total_debates: totalDebates });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const rankLabel = getTitle(elo).label;
 
@@ -262,6 +272,25 @@ export function DashboardClient({ elo, won, lost, winRate, totalDebates, usernam
                             </p>
                         </div>
                     </Link>
+
+                    {/* Weekly recap — identity-based "your mind this week" (ROADMAP
+                        §6.2 item 6 / §5.2 force 2). Shown to returning users only. */}
+                    {hasHistory && (
+                        <Link href="/recap" style={{ textDecoration: "none" }}>
+                            <div className="glass-card" style={{ padding: "1.75rem 1.5rem", borderTop: "1px solid var(--teal)", cursor: "pointer", height: "100%" }}>
+                                <ActionIcon color="var(--teal)">
+                                    <circle cx="12" cy="12" r="9" strokeWidth="1.5" />
+                                    <path d="M12 7v5l3 2" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                </ActionIcon>
+                                <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.9rem", fontWeight: 600, letterSpacing: "0.06em", color: "var(--text-primary)", marginBottom: "0.4rem" }}>
+                                    Your Mind This Week
+                                </p>
+                                <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.88rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                    The Oracle's 7-day reading: your archetype, strongest dimension, and most-committed fallacy.
+                                </p>
+                            </div>
+                        </Link>
+                    )}
                 </div>
 
                 {/* Chronicle divider */}

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScoreResult } from "@/lib/ai/judge";
 import type { Archetype } from "@/lib/ai/archetype";
@@ -23,18 +24,19 @@ const DIMS: { key: keyof Pick<ScoreResult, "clarity" | "evidence" | "logic" | "r
     { key: "rebuttal", label: "Rebuttal" },
 ];
 
-// Reveal phases (ROADMAP §2.5 force 1 — variable-ratio verdict reveal):
-// idle -> deliberating (held breath) -> reveal (dimensions count up, fallacies
-// land last). The suspense beat is the dopamine; do not shorten it casually.
+// Pre-auth landing roast (ROADMAP §6.2 item 5 / §5.2 force 4 + 1). Same tuned
+// verdict reveal as the authed RoastClient, but it hits the anonymous endpoint
+// and ends on a SIGN-UP CTA — the taste happens before the wall, then we ask
+// the now-invested visitor to save it. Kept as a separate component so the
+// authed roast page is untouched.
 type Phase = "idle" | "deliberating" | "reveal";
 
-export function RoastClient() {
+export function AnonRoastClient() {
     const [take, setTake] = useState("");
-    const [stance, setStance] = useState("");
     const [phase, setPhase] = useState<Phase>("idle");
     const [error, setError] = useState("");
     const [result, setResult] = useState<RoastResult | null>(null);
-    const [revealStep, setRevealStep] = useState(0); // 0..4 dims, 5 = fallacies+archetype
+    const [revealStep, setRevealStep] = useState(0);
     const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
     const clearTimers = () => {
@@ -44,7 +46,6 @@ export function RoastClient() {
     useEffect(() => () => clearTimers(), []);
 
     const runReveal = useCallback(() => {
-        // Stagger each dimension, then the fallacy/archetype payload last.
         setRevealStep(0);
         for (let i = 1; i <= DIMS.length; i++) {
             timers.current.push(setTimeout(() => setRevealStep(i), 350 * i));
@@ -62,13 +63,14 @@ export function RoastClient() {
         setResult(null);
         setRevealStep(0);
         setPhase("deliberating");
+        track("anon_roast_started");
 
         const startedAt = Date.now();
         try {
-            const res = await fetch("/api/roast", {
+            const res = await fetch("/api/roast/anon", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ take, stance }),
+                body: JSON.stringify({ take }),
             });
             const data = await res.json();
             if (!res.ok) {
@@ -76,8 +78,6 @@ export function RoastClient() {
                 setPhase("idle");
                 return;
             }
-            // Enforce a minimum "deliberation" beat so the verdict always feels
-            // earned, even if Gemini answers instantly (the held breath matters).
             const MIN_BEAT = 1800;
             const elapsed = Date.now() - startedAt;
             const wait = Math.max(0, MIN_BEAT - elapsed);
@@ -86,14 +86,14 @@ export function RoastClient() {
                     setResult(data as RoastResult);
                     setPhase("reveal");
                     runReveal();
-                    track("roast_completed", { score: (data as RoastResult)?.score?.total ?? 0 });
+                    track("anon_roast_verdict", { score: (data as RoastResult)?.score?.total ?? 0 });
                 }, wait)
             );
         } catch {
             setError("The Oracle is unreachable. Check your connection and try again.");
             setPhase("idle");
         }
-    }, [take, stance, runReveal]);
+    }, [take, runReveal]);
 
     const reset = () => {
         clearTimers();
@@ -103,40 +103,28 @@ export function RoastClient() {
         setError("");
     };
 
-    const shareText = result
-        ? `The Oracle scored my take ${result.score.total}/80 and called me "${result.archetype.title}". Roast yours →`
-        : "";
-    const shareUrl =
-        typeof window !== "undefined" ? `${window.location.origin}/roast` : "https://argos-indol.vercel.app/roast";
-    const tweetHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`;
-
     return (
-        <>
-            {/* Header */}
-            <div className="reveal-1" style={{ marginBottom: "2rem" }}>
-                <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.65rem", letterSpacing: "0.28em", color: "var(--text-gold)", textTransform: "uppercase", marginBottom: "0.6rem" }}>
-                    ◆ Solo Trial
-                </p>
-                <h1 style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "clamp(1.5rem, 4vw, 2.2rem)", fontWeight: 700, letterSpacing: "0.04em", lineHeight: 1.15 }}>
-                    Roast <span style={{ color: "var(--text-gold)" }}>my take</span>
-                </h1>
-                <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", color: "var(--text-secondary)", fontSize: "0.95rem", marginTop: "0.6rem" }}>
-                    Paste any opinion. No opponent. The Oracle scores your reasoning and names every fallacy — instantly.
-                </p>
-                <div style={{ marginTop: "0.85rem", height: "1px", width: "120px", background: "linear-gradient(90deg, var(--gold) 0%, var(--gold-border) 60%, transparent 100%)" }} />
+        <div style={{ width: "100%", maxWidth: "560px", textAlign: "left" }}>
+            {/* Eyebrow */}
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.25rem" }}>
+                <div className="gold-rule-subtle" style={{ flex: 1 }} />
+                <span style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.62rem", letterSpacing: "0.26em", color: "var(--text-gold)", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                    Try it now — no sign-up
+                </span>
+                <div className="gold-rule-subtle" style={{ flex: 1 }} />
             </div>
 
-            {/* Input (hidden once a verdict is showing) */}
+            {/* Input (hidden during reveal) */}
             {phase !== "reveal" && (
-                <div className="reveal-2 glass-card glass-card-gold" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
+                <div className="glass-card glass-card-gold" style={{ padding: "1.5rem" }}>
                     <label style={{ display: "block", fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", textTransform: "uppercase", marginBottom: "0.6rem" }}>
-                        Your take
+                        Paste a take — the Oracle scores your reasoning
                     </label>
                     <textarea
                         value={take}
                         onChange={(e) => { setTake(e.target.value); if (error) setError(""); }}
                         placeholder="Paste a tweet, a hot take, or an opinion you want stress-tested…"
-                        rows={5}
+                        rows={4}
                         className="oracle-input"
                         style={{ resize: "none" }}
                         disabled={phase === "deliberating"}
@@ -153,10 +141,9 @@ export function RoastClient() {
                                     padding: "0.3rem 0.75rem", background: "var(--bg-surface)",
                                     border: "1px solid var(--border-default)", borderRadius: "var(--radius-sm)",
                                     color: "var(--text-secondary)", cursor: "pointer",
-                                    transition: "color 150ms ease, border-color 150ms ease, background 150ms ease",
                                 }}
                             >
-                                {t.length > 42 ? t.slice(0, 42) + "…" : t}
+                                {t.length > 38 ? t.slice(0, 38) + "…" : t}
                             </button>
                         ))}
                     </div>
@@ -184,9 +171,9 @@ export function RoastClient() {
                 </div>
             )}
 
-            {/* Deliberation beat (held breath) */}
+            {/* Deliberation beat */}
             {phase === "deliberating" && (
-                <div className="glass-card" style={{ padding: "2.5rem 1.5rem", textAlign: "center", marginBottom: "1.5rem" }}>
+                <div className="glass-card" style={{ padding: "2.25rem 1.5rem", textAlign: "center", marginTop: "1.25rem" }}>
                     <div style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.7rem", letterSpacing: "0.2em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
                         <span style={{ animation: "oracle-pulse 1.2s ease-in-out infinite" }}>Weighing clarity · evidence · logic · rebuttal</span>
                     </div>
@@ -196,7 +183,6 @@ export function RoastClient() {
             {/* Verdict reveal */}
             {phase === "reveal" && result && (
                 <div>
-                    {/* Total */}
                     <div className="glass-card glass-card-gold" style={{ padding: "1.75rem 1.5rem", marginBottom: "1.25rem", textAlign: "center", animation: "oracle-fade-in 0.4s ease both" }}>
                         <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.6rem", letterSpacing: "0.22em", color: "var(--text-gold)", textTransform: "uppercase", marginBottom: "0.5rem" }}>
                             The Verdict
@@ -206,7 +192,6 @@ export function RoastClient() {
                         </div>
                     </div>
 
-                    {/* Dimensions count up one at a time */}
                     <div className="glass-card" style={{ padding: "1.5rem", marginBottom: "1.25rem" }}>
                         {DIMS.map((d, i) => {
                             const shown = revealStep > i;
@@ -225,7 +210,6 @@ export function RoastClient() {
                         })}
                     </div>
 
-                    {/* Fallacies land LAST (the sting) */}
                     {revealStep > DIMS.length && (
                         <div style={{ animation: "oracle-fade-in 0.4s ease both" }}>
                             {result.score.fallacies_found.length > 0 ? (
@@ -249,13 +233,6 @@ export function RoastClient() {
                                 </div>
                             )}
 
-                            {result.score.feedback && (
-                                <div className="glass-card" style={{ padding: "1.25rem 1.5rem", marginBottom: "1.25rem" }}>
-                                    <p style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.58rem", letterSpacing: "0.2em", color: "var(--text-gold)", textTransform: "uppercase", marginBottom: "0.5rem" }}>Oracle's note</p>
-                                    <p style={{ fontFamily: "var(--font-crimson), serif", fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>{result.score.feedback}</p>
-                                </div>
-                            )}
-
                             {/* Mind archetype (identity payload) */}
                             <div className="glass-card glass-card-gold" style={{ padding: "1.5rem", marginBottom: "1.5rem", textAlign: "center" }}>
                                 <p style={{ fontFamily: "var(--font-share-tech), monospace", fontSize: "0.58rem", letterSpacing: "0.22em", color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: "0.5rem" }}>
@@ -269,26 +246,25 @@ export function RoastClient() {
                                 </p>
                             </div>
 
-                            {/* Actions */}
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "center" }}>
-                                <a href={tweetHref} target="_blank" rel="noopener noreferrer" className="btn-oracle" style={{ fontSize: "0.7rem", letterSpacing: "0.16em", padding: "0.75rem 1.4rem", textDecoration: "none" }}>
-                                    Share the verdict →
-                                </a>
-                                <button onClick={reset} className="btn-ghost" style={{ fontSize: "0.7rem", letterSpacing: "0.16em", padding: "0.75rem 1.4rem" }}>
-                                    Roast another
-                                </button>
+                            {/* The conversion CTA — invest, then sign up to save */}
+                            <div className="glass-card glass-card-teal" style={{ padding: "1.5rem", marginBottom: "1.25rem", textAlign: "center" }}>
+                                <p style={{ fontFamily: "var(--font-crimson), serif", fontStyle: "italic", fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "1.1rem" }}>
+                                    Save this verdict, earn an Elo rank, and debate real opponents — free.
+                                </p>
+                                <Link href="/login" className="btn-oracle" style={{ fontSize: "0.72rem", letterSpacing: "0.16em", padding: "0.8rem 1.6rem", textDecoration: "none" }}>
+                                    Claim your rank →
+                                </Link>
                             </div>
 
-                            {/* Convert: roast -> a real 1-round match (ROADMAP 2.4 item 1) */}
-                            <p style={{ textAlign: "center", marginTop: "1.25rem" }}>
-                                <a href="/dashboard" style={{ fontFamily: "var(--font-cinzel), serif", fontSize: "0.7rem", letterSpacing: "0.12em", color: "var(--text-secondary)", textDecoration: "none", borderBottom: "1px solid var(--gold-border)", paddingBottom: "0.15rem" }}>
-                                    Now try a real round — ⚡ Lightning vs the Oracle →
-                                </a>
+                            <p style={{ textAlign: "center" }}>
+                                <button onClick={reset} className="btn-ghost" style={{ fontSize: "0.7rem", letterSpacing: "0.16em", padding: "0.7rem 1.4rem" }}>
+                                    Roast another
+                                </button>
                             </p>
                         </div>
                     )}
                 </div>
             )}
-        </>
+        </div>
     );
 }

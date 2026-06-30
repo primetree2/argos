@@ -159,14 +159,23 @@ export interface ModerationVerdict {
     reason: string;
 }
 
-// Gemini safety pass (ROADMAP Phase 1, item 3). Returns a deterministic safety
-// verdict for an argument BEFORE it is accepted. Runs on the lite model with a
-// shorter timeout (this sits on the submit hot path). FAIL-OPEN: any error,
-// timeout, or unparseable response resolves to { allowed: true } so a Gemini
-// outage never blocks legitimate play — the cheap regex/length filter in
-// lib/moderation.ts remains the always-on gate.
-export async function moderateWithOracle(content: string): Promise<ModerationVerdict> {
-    const ALLOW: ModerationVerdict = { allowed: true, category: "none", reason: "" };
+// Like ModerationVerdict, but also reports whether the verdict came from a real
+// classification or from the FAIL-OPEN fallback (a Gemini outage/timeout/parse
+// failure). Callers that need fail-SAFE behaviour for untrusted users
+// (ROADMAP Pillar 1 / R2) inspect `errored` to decide whether an `allowed:
+// true` is a genuine pass or an unverified default.
+export interface ModerationStatus extends ModerationVerdict {
+    errored: boolean;
+}
+
+// Gemini safety pass (ROADMAP Phase 1, item 3), with explicit error status.
+// Returns a deterministic safety verdict for an argument BEFORE it is accepted.
+// Runs on the lite model with a shorter timeout (this sits on the submit hot
+// path). On any error/timeout/unparseable response it resolves to
+// { allowed: true, errored: true } — fail-open by default, but the `errored`
+// flag lets a caller fail-CLOSED for new/low-Elo users (R2).
+export async function moderateWithOracleStatus(content: string): Promise<ModerationStatus> {
+    const ALLOW_ERRORED: ModerationStatus = { allowed: true, category: "none", reason: "", errored: true };
     try {
         const model = genAI.getGenerativeModel({
             model: PRIMARY_MODEL,
@@ -181,7 +190,7 @@ export async function moderateWithOracle(content: string): Promise<ModerationVer
         );
         const text = result.response.text().replace(/```json|```/g, "").trim();
         const raw = JSON.parse(text) as Partial<ModerationVerdict>;
-        if (typeof raw.allowed !== "boolean") return ALLOW;
+        if (typeof raw.allowed !== "boolean") return ALLOW_ERRORED;
         return {
             allowed: raw.allowed,
             category: typeof raw.category === "string" ? raw.category : "none",
@@ -189,11 +198,23 @@ export async function moderateWithOracle(content: string): Promise<ModerationVer
                 !raw.allowed && typeof raw.reason === "string" && raw.reason.trim()
                     ? raw.reason.trim()
                     : "This argument was flagged by safety review. Keep the debate respectful.",
+            errored: false,
         };
     } catch {
-        // Fail open — do not block a legitimate user on a transient AI error.
-        return ALLOW;
+        // Could not classify — return the fail-open default but mark it errored
+        // so fail-safe callers can reject untrusted users instead of trusting it.
+        return ALLOW_ERRORED;
     }
+}
+
+// Backwards-compatible fail-open safety pass. Any error resolves to allowed so a
+// Gemini outage never blocks legitimate play — the cheap regex/length filter in
+// lib/moderation.ts remains the always-on gate. New callers that need fail-safe
+// behaviour should use moderateWithOracleStatus + lib/moderation's
+// moderateArgumentSafety instead.
+export async function moderateWithOracle(content: string): Promise<ModerationVerdict> {
+    const { errored: _errored, ...verdict } = await moderateWithOracleStatus(content);
+    return verdict;
 }
 
 // Reject with a TimeoutError if the promise doesn't settle within `ms`.

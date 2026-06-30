@@ -1,5 +1,6 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { argueAsOracle, ORACLE_USER_ID, type OracleHistoryEntry } from "@/lib/ai/oracle";
+import { consumeGeminiBudget } from "@/lib/ai/budget";
 import { NextResponse } from "next/server";
 
 // POST /api/debates/[id]/oracle-turn
@@ -91,6 +92,19 @@ export async function POST(
     const title = Array.isArray(topicTitle)
         ? topicTitle[0]?.title ?? ""
         : topicTitle?.title ?? "";
+
+    // Gemini budget breaker (R5/R11) for the Oracle's argue call, keyed to the
+    // Oracle user id so its spend is bounded separately from real users. On
+    // exhaustion we leave the turn on the Oracle (the maintenance cron retries
+    // once the daily window rolls over) rather than forfeit — matching the
+    // transient-error behaviour below. FAIL-OPEN inside consumeGeminiBudget.
+    const budget = await consumeGeminiBudget(serviceClient, ORACLE_USER_ID);
+    if (!budget.allowed) {
+        return NextResponse.json(
+            { error: "Oracle at daily capacity", scope: budget.scope },
+            { status: 503 }
+        );
+    }
 
     let content: string;
     try {

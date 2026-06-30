@@ -3,6 +3,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { scoreArgument } from "@/lib/ai/judge";
 import { finalizeIfComplete } from "@/lib/debates/finalize";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { consumeGeminiBudget } from "@/lib/ai/budget";
 import { NextResponse } from "next/server";
 
 // Rate limit only the DIRECT (browser self-heal) path. Trusted internal callers
@@ -110,6 +111,30 @@ export async function POST(request: Request) {
     // Content was already moderated pre-write in the argument route, so there is
     // no second moderation pass here. (A previous duplicate check could mark an
     // already-accepted argument 'failed'.)
+
+    // Gemini budget breaker (R5/R11). Checked even for the internal
+    // CRON_SECRET path, which is exempt from the per-user rate limit above, so
+    // a leaked secret can't run up unbounded Gemini cost. On exhaustion we mark
+    // the argument failed (terminal, counts as 0) and finalize if it was the
+    // last outstanding score, so the debate never hangs in 'scoring'. FAIL-OPEN
+    // inside consumeGeminiBudget, so a metering fault never blocks scoring.
+    const budget = await consumeGeminiBudget(serviceClient, callerId);
+    if (!budget.allowed) {
+        await serviceClient
+            .from("arguments")
+            .update({
+                scoring_status: "failed",
+                ai_feedback:
+                    "The Oracle is at capacity right now (daily limit reached). This argument counts as 0.",
+            })
+            .eq("id", argumentId);
+        await serviceClient.rpc("complete_scoring_job", { p_argument_id: argumentId });
+        await finalizeIfComplete(serviceClient, arg.debate_id);
+        return NextResponse.json(
+            { error: "Scoring temporarily unavailable (daily AI limit reached).", scope: budget.scope },
+            { status: 503 }
+        );
+    }
 
     // Mark as scoring (idempotent — safe for concurrent retries).
     await serviceClient

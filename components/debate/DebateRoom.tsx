@@ -12,6 +12,7 @@ import { AudienceVote } from "./AudienceVote";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
 import { flagEmoji, countryName } from "@/lib/country";
+import { track } from "@/lib/analytics";
 
 interface Argument {
     id: string;
@@ -355,6 +356,20 @@ export function DebateRoom({
         return () => { clearTimeout(first); clearInterval(repeat); };
     }, [myArguments]);
 
+    // Funnel: a debate the viewer PARTICIPATED in reached completion (the
+    // verdict). Fire once per completed debate; skip spectators/anonymous.
+    const completedTrackedRef = useRef(false);
+    useEffect(() => {
+        if (completedTrackedRef.current) return;
+        if (debate.status !== "completed" || isSpectator) return;
+        completedTrackedRef.current = true;
+        track("debate_completed", {
+            debate_id: debate.id,
+            mode: debate.mode,
+            won: debate.winner_id === currentUserId,
+        });
+    }, [debate.status, debate.id, debate.mode, debate.winner_id, isSpectator, currentUserId]);
+
     const formatTime = (s: number) => {
         const m = Math.floor(s / 60);
         const sec = s % 60;
@@ -419,8 +434,16 @@ export function DebateRoom({
                 setOptimisticArg(null);
                 setArgument(trimmed);
                 setError(data.error ?? "Failed to submit argument.");
+            } else {
+                // Funnel: the core activation step (§6.2 item 7). Fire once per
+                // successful submit; realtime replaces the placeholder.
+                track("argument_submitted", {
+                    debate_id: debate.id,
+                    round: debate.current_round,
+                    mode: debate.mode,
+                    blitz: !!debate.blitz,
+                });
             }
-            // On success realtime replaces the placeholder; nothing to do here.
         } catch {
             setOptimisticArg(null);
             setArgument(trimmed);

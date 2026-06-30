@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { CircuitBackground } from "@/components/CircuitBackground";
+import { AnonRoastClient } from "@/components/roast/AnonRoastClient";
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -216,22 +217,24 @@ export default async function HomePage() {
             </svg>
           </Link>
 
-          {/* Low-friction secondary hook (ROADMAP §2.5) */}
-          <Link
-            href="/roast"
+          {/* Low-friction secondary hook (ROADMAP §5.2 force 5): point at the
+              inline pre-auth roast below instead of a separate page. */}
+          <span
             style={{
               fontFamily: "var(--font-cinzel), serif",
               fontSize: "0.72rem",
               letterSpacing: "0.14em",
-              color: "var(--text-secondary)",
-              textDecoration: "none",
-              borderBottom: "1px solid var(--gold-border)",
-              paddingBottom: "0.15rem",
-              transition: "color 200ms ease",
+              color: "var(--text-tertiary)",
             }}
           >
-            or roast a take — no opponent, instant verdict →
-          </Link>
+            or roast a take below — no sign-up, instant verdict ↓
+          </span>
+        </div>
+
+        {/* ── Pre-auth roast (ROADMAP §6.2 item 5 / §5.2 force 4): the first
+            taste happens BEFORE the auth wall, then we ask to save it. ── */}
+        <div className="reveal-4" style={{ width: "100%", display: "flex", justifyContent: "center", marginBottom: "5rem" }}>
+          <AnonRoastClient />
         </div>
 
         {/* ── Instrument panel row ── */}

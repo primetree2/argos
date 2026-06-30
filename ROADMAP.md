@@ -308,22 +308,51 @@ door, engineer the five forces above, and position the whole product around self
    `moderateTopicSafety` Gemini pass now run on `POST /api/debates` and
    `POST /api/challenges` before a topic touches the judge prompt, the public feed, or an
    OG card (`lib/moderation.ts`). NO migration/env change.
-3. **[Pillar 1] Make moderation safe under failure (R2).** Keep fail-open for established
-   users, but **fail-closed (or queue-for-review)** for the safety pass on new/low-Elo/
-   first-N-argument users; add an always-on free moderation API (OpenAI Moderation free,
-   Perspective free tier) as the real layer beneath the regex.
-4. **[Pillar 1] Gemini global budget breaker (R5/R11).** A daily global call ceiling +
-   per-user metering independent of the internal-secret exemption; ensure `CRON_SECRET`
-   is long/random and document rotation.
-5. **[Pillar 3] Anonymous landing-page roast (R6/R7, Pillar 2 too).** Let a logged-out
-   visitor paste a take and get the verdict **before** the auth wall, then prompt to save.
-   This is the single highest-leverage growth lever.
-6. **[Pillar 3+4] Weekly “your mind this week” recap + share.** Your strongest organic,
-   identity-based share artifact (most-committed fallacies, strongest dimension, archetype
-   drift). Reuses stored scores; no new Gemini per view.
-7. **[Pillar 1/4] Funnel instrumentation in PostHog.** Define + watch signup → first
-   argument → second debate → D1/D7. **Do not build anything else until the curve is
-   visible.** This is how every later decision gets made.
+3. ✅ **[Pillar 1] Make moderation safe under failure (R2) — SHIPPED (fail-safe layer).**
+   The Gemini safety pass now reports whether it actually classified the content
+   (`moderateWithOracleStatus` → `errored` flag in `lib/ai/judge.ts`). A new
+   `moderateArgumentSafety(text,{trusted})` + `isTrustedUser()` in `lib/moderation.ts`
+   keep **fail-open for established users** (non-starting Elo OR ≥3 completed debates)
+   but **fail-CLOSED for new/low-Elo accounts** when the pass can't classify (Gemini
+   outage/timeout) — wired into `POST /api/debates/[id]/argument` and `POST /api/roast`.
+   NO migration/env change. *Remaining (LATER-FREE):* add an always-on free moderation API
+   (OpenAI Moderation / Perspective free tier) as a second always-on layer beneath the regex.
+4. ✅ **[Pillar 1] Gemini global budget breaker (R5/R11) — SHIPPED.** `lib/ai/budget.ts`
+   `consumeGeminiBudget()` enforces a **global** daily Gemini-call ceiling AND a **per-user**
+   daily ceiling, built on the already-deployed `check_rate_limit()` SQL (0008) keyed by a
+   fixed UTC-day bucket — so it is INDEPENDENT of the internal-secret exemption that lets
+   `/api/score` skip the normal rate limit (R11). Wired into `/api/score` (incl. the internal
+   path), `/api/roast`, and the Oracle argue route; on exhaustion the argument is marked
+   failed (counts as 0) and the debate finalizes so it never hangs. FAIL-OPEN on any metering
+   error. Limits override via optional `GEMINI_DAILY_GLOBAL_LIMIT` / `GEMINI_DAILY_PER_USER_LIMIT`
+   env vars (defaults 5000 / 300). NO migration. *Note: keep `CRON_SECRET` long/random and
+   rotate it periodically — it is the high-value secret behind the score/oracle internal paths.*
+5. ✅ **[Pillar 3] Anonymous landing-page roast (R6/R7, Pillar 2 too) — SHIPPED.** A
+   logged-out visitor now pastes a take INLINE on the landing page and gets the Oracle's
+   verdict **before** the auth wall, then is prompted to sign up to save it.
+   `POST /api/roast/anon` (no auth, writes NOTHING) reuses the judge + archetype verbatim
+   and is hardened for an open endpoint: strict per-IP-hash rate limit (3/hour), the Gemini
+   budget breaker keyed to the IP hash, and FAIL-CLOSED safety moderation (anonymous =
+   untrusted). `components/roast/AnonRoastClient.tsx` runs the tuned verdict reveal (§5.2
+   force 1) and ends on a "Claim your rank" sign-up CTA (force 4). NO migration/env change.
+6. ✅ **[Pillar 3+4] Weekly “your mind this week” recap + share — SHIPPED.** `lib/recap.ts`
+   `getWeeklyRecap()` aggregates the user's scored arguments from the last 7 days into:
+   argument count, avg/best score, strongest dimension, fallacy-free rate, most-committed
+   fallacy, and the week's mind archetype — all from stored scores, **NO Gemini per view**.
+   `app/recap/page.tsx` renders the Oracle Terminal card with a `ShareRecapButton` client
+   island (identity-based X share: archetype + strongest + avg score). Surfaced via a
+   "Your Mind This Week" dashboard action card (returning users only) and the account
+   dropdown. Empty state for a quiet week nudges back to the arena. NO migration/env change.
+7. ✅ **[Pillar 1/4] Funnel instrumentation in PostHog — SHIPPED (capture layer).**
+   `lib/analytics.ts` defines a typed, no-op-safe event set and `identifyUser`. Wired:
+   `signed_in` + `identify` (dashboard mount, so the funnel is per-person + D1/D7 is
+   computable), `argument_submitted` (the core activation step, on successful submit),
+   `debate_completed` (participant reaches the verdict), `roast_completed` (authed hook),
+   `anon_roast_started`/`anon_roast_verdict` (pre-auth taste), `recap_viewed`. NO
+   migration/env change (reuses the existing PostHog init). **OPERATOR STEP (no code):**
+   in PostHog, build the funnel `signed_in → argument_submitted → debate_completed` and a
+   D1/D7 retention chart on `argument_submitted`. **Do not build anything else until the
+   curve is visible** — then prioritize §6.3 by what the data shows is leaking.
 
 ### 6.3 🔮 LATER-FREE (valuable; schedule after §6.2 + a retention read)
 - **[Pillar 2] Tune the verdict reveal** (force 1) to a true slot-machine cadence.
@@ -360,11 +389,16 @@ Do these strictly in order. Each is free-tier and reuses existing infra.
 2. **Pillar 1 first (integrity):** ship §6.2 items **1–4** (prompt-injection isolation →
    topic moderation → fail-safe moderation → Gemini budget breaker). These protect the
    brand promise (a *trustworthy* mirror) and are required before any real launch.
+   *Items 1–4 are SHIPPED — the INTEGRITY pillar's pre-launch core is complete.
+   NEXT is Pillar 3+2: the anonymous landing roast (item 5).*
 3. **Pillar 3 + 2 (growth loops):** ship §6.2 items **5–6** (anonymous landing roast →
    weekly “mind” recap share). These are the two distribution loops the product lacks, and
    they are direct expressions of §5.2 forces 4 (pre-auth taste) and 2 (the recap).
-4. **Pillar 1/4 (measurement):** ship §6.2 item **7** (PostHog funnel). **Stop and read
-   the D1/D7 curve before building anything from §6.3.**
+   *Items 1–6 are SHIPPED — all growth loops are live. NEXT is Pillar 1/4: PostHog
+   funnel instrumentation (item 7).*
+4. ✅ **Pillar 1/4 (measurement):** §6.2 item **7** (PostHog funnel) is SHIPPED — the
+   capture layer is live. **The entire §6.2 NEXT track is now complete.** Build the funnel
+   + D1/D7 chart in PostHog and **read the curve before building anything from §6.3.**
 5. **Pick ONE distribution channel** (e.g. seed roast/recap cards on X or a relevant
    subreddit) and run it for **30 days**. Distribution is now a roadmap line item, not an
    afterthought.

@@ -1,8 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { scoreArgument } from "@/lib/ai/judge";
-import { moderateWithOracle } from "@/lib/ai/judge";
+import { moderateArgumentSafety, isTrustedUser } from "@/lib/moderation";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { consumeGeminiBudget } from "@/lib/ai/budget";
 import { getArchetype } from "@/lib/ai/archetype";
 
 // A take can legitimately be a single short line (a tweet), so we do NOT apply
@@ -71,8 +72,22 @@ export async function POST(request: Request) {
         );
     }
 
-    // Same Gemini safety pass used on real arguments (fail-open inside).
-    const safety = await moderateWithOracle(take);
+    // Gemini budget breaker (R5/R11). Roast spends Gemini twice (the safety
+    // pass below + the judge), so gate it before either call. FAIL-OPEN inside.
+    const budget = await consumeGeminiBudget(supabase, user.id);
+    if (!budget.allowed) {
+        return NextResponse.json(
+            { error: "The Oracle is at capacity right now. Try again later." },
+            { status: 503 }
+        );
+    }
+
+    // Same Gemini safety pass used on real arguments, now FAIL-SAFE (R2):
+    // trusted users keep fail-open, new/low-Elo accounts fail-closed if the
+    // pass can't classify. Roast is the lowest-friction hook, so a fresh
+    // account is the common case here — the fail-safe path matters most.
+    const trusted = await isTrustedUser(supabase, user.id);
+    const safety = await moderateArgumentSafety(take, { trusted });
     if (!safety.allowed) {
         return NextResponse.json({ error: safety.reason }, { status: 400 });
     }

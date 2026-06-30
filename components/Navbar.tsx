@@ -362,6 +362,14 @@ export function Navbar({ username, hideJoinBar, hideAuth }: NavbarProps) {
                                         Chronicle
                                     </Link>
                                     <Link
+                                        href="/recap"
+                                        role="menuitem"
+                                        className="nav-menu-item"
+                                        onClick={() => setMenuOpen(false)}
+                                    >
+                                        Weekly recap
+                                    </Link>
+                                    <Link
                                         href="/account"
                                         role="menuitem"
                                         className="nav-menu-item"

@@ -14,6 +14,181 @@
 >
 > Only the section `## 15. Current Status
 
+**Session:** PostHog funnel instrumentation (Pillar 1/4 / §6.2 item 7) (FREE)
+**Date:** 2026-06-30
+
+### This checkpoint
+- ✅ **Shipped the PostHog funnel capture layer — `ROADMAP.md` §6.2 item 7, the
+  FINAL item in the NEXT track. The entire §6.2 integrity+growth+measurement
+  plan is now complete.** NO migration, NO env change (reuses the existing
+  PostHog init in `components/PosthogProvider.tsx`):
+  - **`lib/analytics.ts`** — one typed `track(event, props)` + `identifyUser()`
+    wrapper over `posthog.capture`/`identify`, with a fixed `FunnelEvent` union
+    so event names can't drift. Every call is a SAFE no-op if PostHog isn't
+    initialized (key unset, SSR, init failed) and never throws into a UI path.
+  - **Events wired:**
+    - `signed_in` + `identify` — on dashboard mount (`DashboardClient`), so the
+      funnel is measurable PER-PERSON and D1/D7 retention is computable.
+    - `argument_submitted` — the CORE activation step, on a successful submit in
+      `DebateRoom` (skips spectators/anonymous; never fires on error).
+    - `debate_completed` — once when a PARTICIPANT's debate reaches the verdict
+      (capture-once ref; skips spectators).
+    - `roast_completed` (authed `RoastClient`), `anon_roast_started` +
+      `anon_roast_verdict` (pre-auth `AnonRoastClient` — the top of funnel),
+      and `recap_viewed` (`ShareRecapButton`, which always renders with a recap).
+  - **OPERATOR STEP (no code):** in PostHog, build the funnel
+    `signed_in → argument_submitted → debate_completed` and a D1/D7 retention
+    chart keyed on `argument_submitted`. Per `ROADMAP.md` §7, **do not build
+    anything else until that curve is visible** — then prioritize the §6.3
+    LATER-FREE list by whatever the funnel shows is leaking.
+  - **NO migration, NO schema, NO env change. Runnable as-is.**
+  - **NEXT:** read the funnel, then pick ONE distribution channel for 30 days
+    (§7 step 5) and start on §6.3 driven by the data (verdict-reveal tuning,
+    streak-loss push nudges, `DebateRoom` refactor, monitoring/alerts, tests).
+
+#### Prior checkpoint
+**Session:** Weekly “your mind this week” recap + share (Pillar 3+4 / §5.2 force 2) (FREE)
+**Date:** 2026-06-30
+
+### This checkpoint
+- ✅ **Shipped the weekly “your mind this week” recap — `ROADMAP.md` §6.2 item 6,
+  the strongest ORGANIC, identity-based share artifact (Spotify-Wrapped energy).
+  NO Gemini per view, NO new table, NO migration:**
+  - **`lib/recap.ts` `getWeeklyRecap(client, userId, days=7)`** — a pure
+    aggregate over the user's `scoring_status='done'` arguments from the last 7
+    days: argument count, avg/best total score, strongest dimension (avg), clean
+    rate (% with zero fallacies), most-committed fallacy (tallied by name across
+    `fallacies_found`), and the week's mind archetype (`getArchetype` over the
+    averaged dims). Returns `null` on no data/error (fail-open).
+  - **`app/recap/page.tsx`** — auth-gated server page rendering the recap in
+    the Oracle Terminal aesthetic: archetype headline (gold shimmer), stat grid
+    (arguments / avg / best / clean rate), strongest dimension, most-committed
+    fallacy (red sting) or a clean-week teal card, then the share + back CTAs.
+    Empty state for a quiet week nudges back to the arena.
+  - **`components/recap/ShareRecapButton.tsx`** — client island building an
+    identity-based X share intent: “This week the Oracle read my mind as
+    \"[archetype]\" — strongest in [dim], averaging [N]/80. What does yours read
+    as?” — the Spotify-Wrapped hook that makes it shareable.
+  - **`app/recap/loading.tsx`** — `OracleLoader` with “Reading your week…”.
+  - **Surfaced via:** a “Your Mind This Week” action card on the dashboard
+    (returning users only, teal accent, clock icon) and a “Weekly recap” link
+    in the account dropdown (after Chronicle).
+  - **NO migration, NO schema, NO env change. Runnable as-is.**
+  - **NEXT (Pillar 1/4):** PostHog funnel instrumentation (item 7) — define +
+    watch signup → first argument → second debate → D1/D7. Do not build
+    anything else until the curve is visible.
+
+#### Prior checkpoint
+**Session:** Anonymous (pre-auth) landing-page roast (Pillar 3+2 / R6+R7) (FREE)
+**Date:** 2026-06-30
+
+### This checkpoint
+- ✅ **Shipped the anonymous landing-page roast — `ROADMAP.md` §6.2 item 5, “the
+  single highest-leverage growth lever,” the first GROWTH checkpoint after the
+  Pillar 1 integrity core.** A logged-out visitor now pastes a take INLINE on
+  the landing page and gets the Oracle's full verdict (§5.2 force 4: the first
+  taste happens BEFORE the auth wall), then is asked to sign up to save it.
+  NO migration, NO schema, writes NOTHING to the DB:
+  - **`POST /api/roast/anon` (NO AUTH).** Mirrors the authed `/api/roast`
+    scoring (reuses `scoreArgument` + `getArchetype` verbatim) but is hardened
+    for an open endpoint: (1) a strict per-IP rate limit — **3/hour**, keyed by
+    the HASHED IP (`hashSignupIp`, never the raw IP) via `check_rate_limit`
+    (0008), fail-open; (2) the **Gemini budget breaker** (`consumeGeminiBudget`,
+    keyed `anon:<iphash>`) so anonymous spend counts against the same global
+    ceiling; (3) **FAIL-CLOSED** safety moderation (`moderateArgumentSafety`
+    with `trusted:false`, since anonymous = untrusted, R2). Bounded length +
+    profanity gate as on roast.
+  - **`components/roast/AnonRoastClient.tsx`** — a client island running the
+    SAME tuned verdict reveal as `RoastClient` (§5.2 force 1: deliberation beat
+    → dimensions count up → fallacies land last → mind archetype), but it ends
+    on a **“Claim your rank →”** sign-up CTA instead of share/dashboard links.
+    Kept separate so the authed `/roast` page is untouched.
+  - **`app/page.tsx`** embeds it directly under the hero CTA; the old “or roast
+    a take” link to `/roast` is replaced by the live inline experience (§5.2
+    force 5: the front door is one tap, not an empty topic box).
+  - **NO migration, NO env change. Runnable as-is** (reuses 0008 + the budget
+    breaker, both already in place; all hardening fail-open except the
+    deliberate anonymous fail-closed safety).
+  - **NEXT (Pillar 3+4):** weekly “your mind this week” recap + share (item 6),
+    then PostHog funnel instrumentation (item 7).
+
+#### Prior checkpoint
+**Session:** Gemini global + per-user daily budget breaker (Pillar 1 / R5+R11) (FREE)
+**Date:** 2026-06-30
+
+### This checkpoint
+- ✅ **Closed R5 + R11 (no Gemini budget breaker / internal-secret cost-bomb) —
+  the 4th INTEGRITY item in `ROADMAP.md` §6.2. This completes the pre-launch
+  core of Pillar 1.** Every argument is 1 Gemini call, every Oracle/Lightning
+  debate 2, every roast 1 — and the internal `/api/score` path is EXEMPT from
+  the per-user rate limit (it bears `CRON_SECRET`), so a leaked secret was an
+  unmetered cost-bomb. Added a free, DB-backed daily ceiling INDEPENDENT of
+  that exemption, NO new dependency, NO migration:
+  - **`lib/ai/budget.ts` `consumeGeminiBudget(client, userId?)`** — enforces a
+    **GLOBAL** daily Gemini-call ceiling and a **per-user** daily ceiling by
+    reusing the already-deployed `check_rate_limit(key, limit, window)` SQL
+    (migration 0008) as a fixed-window counter keyed by UTC day
+    (`gemini:global:<day>`, `gemini:user:<id>:<day>`, 24h window). No new table.
+    **FAIL-OPEN** (any metering error allows the call) — the breaker exists to
+    stop a runaway/abuse spiral, not to hard-lock the product on a counter
+    fault.
+  - Limits are env-overridable (sane free-tier defaults): optional
+    **`GEMINI_DAILY_GLOBAL_LIMIT`** (default 5000) and
+    **`GEMINI_DAILY_PER_USER_LIMIT`** (default 300).
+  - **Wired into `POST /api/score`** (checked even on the internal path — the
+    R11 fix; on exhaustion the argument is marked `failed`/counts-as-0 and the
+    debate is finalized so it never hangs in `scoring`), **`POST /api/roast`**
+    (gated before its two Gemini calls), and
+    **`POST /api/debates/[id]/oracle-turn`** (keyed to the Oracle user id; on
+    exhaustion the turn is left on the Oracle for the maintenance-cron retry,
+    never forfeited).
+  - **Operational note:** keep `CRON_SECRET` long/random and rotate it
+    periodically — it is the high-value secret behind the score + oracle
+    internal paths (R11).
+  - **NO migration, NO schema change. Runnable as-is** (reuses 0008, already
+    applied; FAIL-OPEN if it were ever absent).
+  - **NEXT (Pillar 3+2):** anonymous landing-page roast (R6/R7) → weekly "mind"
+    recap → PostHog funnel.
+
+#### Prior checkpoint
+**Session:** Fail-safe moderation for new/low-Elo users (Pillar 1 / R2 — HIGH) (FREE)
+**Date:** 2026-06-30
+
+### This checkpoint
+- ✅ **Closed R2 (moderation under failure) — the 3rd INTEGRITY item in
+  `ROADMAP.md` §6.2.** The Gemini safety pass was uniformly **fail-open**: any
+  outage/timeout/parse failure → allowed. Correct for established users, but it
+  meant that during a Gemini outage (i.e. when traffic is highest) a brand-new
+  throwaway account could flush hate/harassment/doxxing into public stranger
+  UGC unchecked. Now the safety pass is **fail-SAFE** — fail-open for trusted
+  users, fail-CLOSED for untrusted (new/low-Elo) ones. NO new dependency, NO
+  migration:
+  - **`lib/ai/judge.ts` `moderateWithOracleStatus(content)`** — the same Gemini
+    safety pass, but it now reports whether it ACTUALLY classified the content
+    via an `errored` flag (`ModerationStatus`). A clean `allowed:true` is
+    distinguishable from a fail-open default. The existing `moderateWithOracle`
+    is now a thin wrapper (drops `errored`), so every prior fail-open caller is
+    UNCHANGED.
+  - **`lib/moderation.ts` `isTrustedUser(client,userId)`** — fail-open read
+    (any error → untrusted, the SAFER default): trusted once a user has a
+    non-starting Elo (`> 1200`, which only moves via ranked completion) OR ≥3
+    completed debates.
+  - **`lib/moderation.ts` `moderateArgumentSafety(text,{trusted})`** — runs
+    `moderateWithOracleStatus`; a real block is rejected for everyone; an
+    `errored` (couldn't-classify) result is allowed for trusted users but
+    REJECTED for untrusted ones with a clear "safety review temporarily
+    unavailable" message. The always-on regex/length gate sits beneath both.
+  - **Wired into `POST /api/debates/[id]/argument`** (resolves trust via the
+    service client, replaces the bare `moderateWithOracle`) and
+    **`POST /api/roast`** (the lowest-friction hook, where a fresh account is
+    the common case, so the fail-closed path matters most).
+  - **NO migration, NO schema, NO env change. Established users see ZERO change;
+    only untrusted users during an AI outage are gated. Runnable as-is.**
+  - **NEXT (Pillar 1):** Gemini global budget breaker (R5/R11). *(LATER-FREE:
+    an always-on free moderation API — OpenAI Moderation / Perspective — as a
+    second always-on layer beneath the regex.)*
+
+#### Prior checkpoint
 **Session:** Topic moderation before use (Pillar 1 / R3 — HIGH) (FREE)
 **Date:** 2026-06-30
 
@@ -478,6 +653,8 @@ SUPABASE_SERVICE_ROLE_KEY=       # server-only, used in score route + crons
 
 # AI
 GEMINI_API_KEY=                  # server-only
+GEMINI_DAILY_GLOBAL_LIMIT=       # optional; max Gemini calls/day across all users (default 5000)
+GEMINI_DAILY_PER_USER_LIMIT=     # optional; max Gemini calls/day per user (default 300)
 
 # App
 NEXT_PUBLIC_APP_URL=https://argos-indol.vercel.app
